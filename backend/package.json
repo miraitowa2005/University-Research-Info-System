@@ -1,0 +1,46 @@
+{
+  "name": "university-research-backend",
+  "version": "1.0.0",
+  "description": "Backend API for University Research Info System",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "seed:pending": "tsx src/scripts/seed-pending.ts",
+    "test:db": "tsx src/scripts/test-db.ts",
+    "seed:showcase": "tsx src/scripts/seed-showcase.ts",
+    "seed:timed": "tsx src/scripts/seed-timed.ts",
+    "seed:dimensions": "tsx src/scripts/seed-dimensions.ts",
+    "check:dimensions": "tsx src/scripts/check-dimensions.ts",
+    "db:create": "tsx src/scripts/create-db.ts",
+    "seed:users:extras": "tsx src/scripts/seed-users-extras.ts",
+    "seed:users:horizontal": "tsx src/scripts/seed-users-horizontal.ts",
+    "seed:dept:bulk": "tsx src/scripts/seed-dept-bulk.ts",
+    "clean:users:extras": "tsx src/scripts/clean-users-extras.ts",
+    "check:users:extras": "tsx src/scripts/check-users-extras.ts",
+    "check:dept:bulk": "tsx src/scripts/check-dept-bulk.ts",
+    "seed:user": "tsx src/scripts/seed-user.ts",
+    "test:submission": "tsx src/scripts/test-submission.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.15.3",
+    "sequelize": "^6.37.5",
+    "sqlite3": "^5.1.7",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
