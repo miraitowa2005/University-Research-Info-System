@@ -2,8 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { ProjectPhase, User, ResearchTag, ResearchItem } from '../types';
 import { INITIAL_TAGS } from '../logic/compiler';
-import { BarChart3, Users, Clock, Send, Download, Plus, Tag, X, Filter, RefreshCw } from 'lucide-react';
+import { BarChart3, Users, Clock, Send, Download, Plus, Tag, X, Filter, RefreshCw, Megaphone, Paperclip, AlertTriangle, CheckCircle2, FileText, Eye } from 'lucide-react';
 import { projectAPI } from '../logic/api';
+import { toast } from 'react-toastify';
 
 // Define the structure for API response
 interface ProjectPhaseWithSubmissions {
@@ -485,6 +486,208 @@ export const CustomReportBuilder = ({ data }: { data: ResearchItem[] }) => {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * 4. Notice Publisher - 科研指挥舱发布中心
+ */
+export const NoticePublisher = () => {
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [priority, setPriority] = useState<'normal' | 'high'>('normal');
+  const [recipients, setRecipients] = useState<string[]>(['all']);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [isSending, setIsSending] = useState(false);
+
+  const handlePublish = () => {
+    if (!title || !content) {
+      toast.warning('请输入通知标题和正文');
+      return;
+    }
+    setIsSending(true);
+    setTimeout(() => {
+      setIsSending(false);
+      toast.success('通知已全校发布！');
+      setTitle('');
+      setContent('');
+      setAttachments([]);
+    }, 1500);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setAttachments(prev => [...prev, e.target.files![0]]);
+    }
+  };
+
+  const toggleRecipient = (id: string) => {
+    if (id === 'all') {
+      setRecipients(['all']);
+    } else {
+      let newRecipients = recipients.includes('all') ? [] : [...recipients];
+      if (newRecipients.includes(id)) {
+        newRecipients = newRecipients.filter(r => r !== id);
+      } else {
+        newRecipients.push(id);
+      }
+      if (newRecipients.length === 0) newRecipients = ['all'];
+      setRecipients(newRecipients);
+    }
+  };
+
+  const recipientOptions = [
+    { id: 'all', label: '全体教职工' },
+    { id: 'dept_heads', label: '各院系负责人' },
+    { id: 'professors', label: '正高级职称人员' },
+    { id: 'young_scholars', label: '青年骨干教师' },
+  ];
+
+  return (
+    <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="mb-8 flex items-end justify-between">
+        <div>
+          <h2 className="text-3xl font-black text-slate-800 flex items-center tracking-tight">
+            <div className="p-2 bg-indigo-600 rounded-lg mr-4 shadow-lg shadow-indigo-500/30 text-white">
+              <Megaphone className="w-6 h-6" />
+            </div>
+            通知发布中心
+          </h2>
+          <p className="text-slate-500 mt-2 ml-14 font-medium">向全校科研人员传达重要政策与公告</p>
+        </div>
+        <div className="hidden md:flex gap-3">
+          <button className="flex items-center px-4 py-2 bg白 border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition shadow-sm">
+            <Eye className="w-4 h-4 mr-2" /> 预览效果
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden flex flex-col min-h-[600px]">
+          <div className={`h-2 w-full transition-colors duration-500 ${priority === 'high' ? 'bg-orange-500' : 'bg-indigo-500'}`}></div>
+          <div className="p-8 flex-1 flex flex-col">
+            <input
+              type="text"
+              placeholder="请输入通知标题..."
+              className="text-3xl font-bold text-slate-800 placeholder-slate-300 border-none outline-none w-full bg-transparent mb-6"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+            />
+            <div className="w-16 h-1 bg-slate-100 rounded-full mb-8"></div>
+            <textarea
+              placeholder="在此撰写通知正文。支持 Markdown 格式..."
+              className="flex-1 w-full resize-none border-none outline-none text-base text-slate-600 leading-relaxed placeholder-slate-300 bg-transparent"
+              value={content}
+              onChange={e => setContent(e.target.value)}
+            />
+            {attachments.length > 0 && (
+              <div className="mt-6 flex flex-wrap gap-2">
+                {attachments.map((file, idx) => (
+                  <div key={idx} className="flex items-center px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 animate-in zoom-in">
+                    <Paperclip className="w-3 h-3 mr-2 text-slate-400" />
+                    {file.name}
+                    <button onClick={() => setAttachments(attachments.filter((_, i) => i !== idx))} className="ml-2 hover:text-red-500">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="bg-slate-50 border-t border-slate-100 px-6 py-3 flex items-center justify-between">
+            <div className="flex gap-4 text-slate-400">
+              <button className="hover:text-indigo-600 transition"><FileText className="w-5 h-5"/></button>
+              <button className="hover:text-indigo-600 transition relative">
+                <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleFileChange} />
+                <Paperclip className="w-5 h-5"/>
+              </button>
+            </div>
+            <div className="text-xs text-slate-400 font-mono">{content.length} 字</div>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center">
+              <Users className="w-4 h-4 mr-2 text-indigo-500" /> 接收对象
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {recipientOptions.map(opt => {
+                const isActive = recipients.includes(opt.id);
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => toggleRecipient(opt.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-200 ${
+                      isActive
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200'
+                        : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-slate-400 mt-3 leading-tight">* 默认发送给全体人员，点击上方标签可精准推送。</p>
+          </div>
+
+          <div className={`rounded-2xl border p-6 shadow-sm transition-colors duration-300 ${priority === 'high' ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-200'}`}>
+            <h3 className={`text-sm font-bold uppercase tracking-wider mb-4 flex items-center ${priority === 'high' ? 'text-orange-700' : 'text-slate-900'}`}>
+              <AlertTriangle className={`w-4 h-4 mr-2 ${priority === 'high' ? 'text-orange-600' : 'text-slate-400'}`} />
+              紧急程度
+            </h3>
+            <div className="flex bg-white/50 p-1 rounded-xl border border-slate-200/50">
+              <button onClick={() => setPriority('normal')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${priority === 'normal' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-400 hover:text-slate-600'}`}>
+                普通通知
+              </button>
+              <button onClick={() => setPriority('high')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center ${priority === 'high' ? 'bg-orange-500 text-white shadow-md shadow-orange-200' : 'text-slate-400 hover:text-orange-600'}`}>
+                <AlertTriangle className="w-3 h-3 mr-1" />
+                紧急置顶
+              </button>
+            </div>
+            {priority === 'high' && (
+              <div className="mt-3 flex items-start gap-2 text-xs text-orange-600 animate-in fade-in">
+                <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                <p>紧急通知将通过短信和邮件同步推送，并置顶显示 3 天。</p>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex items-center justify-between cursor-not-allowed opacity-60 grayscale">
+            <div className="flex items-center">
+              <div className="p-2 bg-slate-100 rounded-lg mr-3">
+                <Clock className="w-4 h-4 text-slate-500" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-slate-700">定时发送</div>
+                <div className="text-[10px] text-slate-400">高级版功能</div>
+              </div>
+            </div>
+            <div className="w-8 h-4 bg-slate-200 rounded-full relative">
+              <div className="w-4 h-4 bg-white rounded-full shadow-sm absolute left-0"></div>
+            </div>
+          </div>
+
+          <div className="pt-4">
+            <button
+              onClick={handlePublish}
+              disabled={isSending}
+              className={`w-full py-4 rounded-xl font-bold text白 shadow-xl flex items-center justify-center transition-all active:scale-95 duration-300 ${
+                isSending
+                  ? 'bg-slate-400 cursor-not-allowed'
+                  : priority === 'high'
+                  ? 'bg-gradient-to-r from-orange-500 to-red-500 shadow-orange-500/30 hover:shadow-orange-500/50'
+                  : 'bg-gradient-to-r from-indigo-600 to-blue-600 shadow-indigo-500/30 hover:shadow-indigo-500/50'
+              }`}
+            >
+              {isSending ? <>正在推送...</> : (<><Send className="w-5 h-5 mr-2" /> 确认发布通知</>)}
+            </button>
+            <p className="text-center text-xs text-slate-400 mt-4">发布即生效，请仔细核对内容。</p>
           </div>
         </div>
       </div>

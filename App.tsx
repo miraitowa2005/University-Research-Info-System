@@ -9,7 +9,7 @@ import { StatsOverview } from './components/TreeVisualizer';
 import MidtermCheckList from './components/MidtermCheckList';
 import { DynamicForm } from './components/DynamicForm';
 import { AcademicProfile } from './components/AcademicProfile';
-import { ProjectLifecycleManager, TagManager, CustomReportBuilder } from './components/EnhancedAdminTools';
+import { ProjectLifecycleManager, TagManager, CustomReportBuilder, NoticePublisher } from './components/EnhancedAdminTools';
 import { ResearchCalendar, DataExportCenter } from './components/TeacherTools';
 import TeacherNotifications from './components/TeacherNotifications';
 import ReviewTemplatesManager from './components/ReviewTemplatesManager';
@@ -952,7 +952,7 @@ function App() {
             <ProjectApplyForm 
     // 如果后续你需要在这个组件里处理提交逻辑，可以在这里传 props
     // 目前先直接渲染看效果
-  />
+            />
           )}
 
           {/* TEACHER: Academic Profile */}
@@ -1064,102 +1064,10 @@ function App() {
           )}
 
           {activeView === 'publish' && (
-            <PublishContainer deptList={deptList} currentUser={currentUser} />
+            <NoticePublisher />
           )}
 
-          {/* SYS ADMIN: Users */}
-          {activeView === 'users' && false && (
-             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center gap-3">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-                  <input 
-                    type="text" 
-                    placeholder="搜索用户..." 
-                    value={(window as any).__userSearch || ''} 
-                    onChange={(e) => { (window as any).__userSearch = e.target.value; }}
-                    className="block w-full h-10 pl-9 pr-4 rounded-lg bg-white border border-gray-300 text-gray-900 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 focus:outline-none transition-all text-sm" 
-                  />
-                </div>
-                {currentUser?.role === 'sys_admin' && (
-                  <>
-                    <div className="ml-2 flex items-center">
-                      <span className="text-xs text-gray-500 mr-2">删除保护</span>
-                      <button
-                        onClick={() => setDeleteUserArmed(v => !v)}
-                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${deleteUserArmed ? 'bg-red-600' : 'bg-gray-200'}`}
-                      >
-                        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${deleteUserArmed ? 'translate-x-5' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
-                    <button onClick={async () => {
-                      try {
-                        const email = `user${Date.now()}@demo.com`;
-                        await usersAPI.create({ email, password: '123456', full_name: `新用户${Date.now()}`, role: 'teacher' });
-                        const usersList = await usersAPI.getAll();
-                        setUsers(usersList);
-                        toast.success('已添加用户');
-                      } catch (e:any) { toast.error(e.message || '添加失败'); }
-                    }} className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700">添加用户</button>
-                  </>
-                )}
-              </div>
-               <table className="min-w-full divide-y divide-gray-200">
-                 <thead className="bg-gray-50">
-                   <tr>
-                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">姓名</th>
-                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">角色</th>
-                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">部门/学院</th>
-                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">邮箱</th>
-                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-                   </tr>
-                 </thead>
-                 <tbody className="bg-white divide-y divide-gray-200">
-                   {users.filter(u => {
-                     const q = (window as any).__userSearch || '';
-                     return !q || (u.name?.includes(q) || u.email?.includes(q));
-                   }).map(u => (
-                     <tr key={u.id} className="hover:bg-gray-50">
-                       <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{u.name}</td>
-                       <td className="px-6 py-4 whitespace-nowrap">
-                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                           {u.role === 'teacher' ? '教师' : (u.role === 'research_admin' ? '科研管理员' : '系统管理员')}
-                         </span>
-                       </td>
-                       <td className="px-6 py-4 whitespace-nowrap text-gray-500">{u.department || '-'}</td>
-                       <td className="px-6 py-4 whitespace-nowrap text-gray-500 text-sm">{u.email}</td>
-                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                         {currentUser?.role === 'sys_admin' ? (
-                           <>
-                             <button onClick={() => {
-                               setEditUserId(String(u.id));
-                               setEditUserName(u.name || '');
-                               setEditUserEmail(u.email || '');
-                               setEditUserDept(u.department || '');
-                               setEditUserRole(u.role as Role);
-                               setEditUserOpen(true);
-                             }} className="text-indigo-600 hover:text-indigo-900">编辑</button>
-                             <button onClick={async () => {
-                               try {
-                                 if (!deleteUserArmed) { toast.error('请先开启删除保护开关'); return; }
-                                 await usersAPI.delete(String(u.id));
-                                 const usersList = await usersAPI.getAll();
-                                 setUsers(usersList);
-                                 setDeleteUserArmed(false);
-                                 toast.success('已删除用户');
-                               } catch (e:any) { toast.error(e.message || '删除失败'); }
-                             }} className="text-red-600 hover:text-red-900 ml-3">删除</button>
-                           </>
-                         ) : (
-                           <span className="text-xs text-gray-400">仅系统管理员可操作</span>
-                         )}
-                       </td>
-                     </tr>
-                   ))}
-                 </tbody>
-             </table>
-            </div>
-          )}
+          
 
           {activeView === 'users' && (
             <UsersContainer users={users} currentUser={currentUser} onUsersRefresh={setUsers} />
