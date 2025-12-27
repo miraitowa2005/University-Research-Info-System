@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   SystemHealth, SysRole, Permission, SystemSetting, Department, AuditLog 
 } from '../types';
@@ -17,6 +17,22 @@ import {
  */
 export const SystemHealthDashboard = () => {
   const [healthData, setHealthData] = useState<SystemHealth[]>(INITIAL_HEALTH);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const api = await import('../logic/api');
+        const h = await api.healthAPI.check();
+        const mapped: SystemHealth[] = [
+          { id: 'db', checkType: 'Database Connection', status: h.db.status, metric: h.db.metric, message: h.db.message, checkedAt: 'Just now' },
+          { id: 'disk', checkType: 'Disk Space (/data)', status: h.disk.status, metric: h.disk.metric, message: h.disk.message, checkedAt: 'Just now' },
+          { id: 'api', checkType: 'API Latency', status: h.api.status, metric: h.api.metric, message: h.api.message, checkedAt: 'Just now' },
+          { id: 'backup', checkType: 'Backup Job', status: h.backup.status, metric: h.backup.metric || '-', message: h.backup.message, checkedAt: 'Just now' },
+        ];
+        setHealthData(mapped);
+      } catch {}
+    })();
+  }, []);
 
   const refreshHealth = () => {
     // Simulate refresh
@@ -50,7 +66,13 @@ export const SystemHealthDashboard = () => {
           <Server className="w-5 h-5 mr-2 text-indigo-600"/> 系统健康监控
         </h3>
         <div className="space-x-2">
-           <button className="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700">查看备份记录</button>
+           <button className="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700" onClick={async () => {
+             try {
+               const api = await import('../logic/api');
+               const list = await api.adminAPI.backups();
+               alert(`最近备份记录：\n` + list.map((b:any) => `${b.id} ${b.status} ${b.updated_at}`).join('\n'));
+             } catch {}
+           }}>查看备份记录</button>
            <button onClick={refreshHealth} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">立即刷新</button>
         </div>
       </div>
@@ -73,10 +95,14 @@ export const SystemHealthDashboard = () => {
       <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
         <h4 className="font-bold text-gray-900 mb-4">系统维护操作</h4>
         <div className="flex gap-4">
-          <button className="flex items-center px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition">
+          <button onClick={async () => {
+            try { const api = await import('../logic/api'); await api.adminAPI.backup(); alert('备份已完成'); } catch {}
+          }} className="flex items-center px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition">
              <Database className="w-4 h-4 mr-2"/> 立即全量备份
           </button>
-          <button className="flex items-center px-4 py-2 bg-orange-50 text-orange-700 rounded-lg border border-orange-100 hover:bg-orange-100 transition">
+          <button onClick={async () => {
+            try { const api = await import('../logic/api'); await api.adminAPI.clearCache(); alert('缓存已清理'); } catch {}
+          }} className="flex items-center px-4 py-2 bg-orange-50 text-orange-700 rounded-lg border border-orange-100 hover:bg-orange-100 transition">
              <Trash2 className="w-4 h-4 mr-2"/> 清理过期缓存
           </button>
         </div>
@@ -89,9 +115,34 @@ export const SystemHealthDashboard = () => {
  * 2. RBAC Role Manager
  */
 export const RolePermissionManager = () => {
-  const [roles] = useState<SysRole[]>(INITIAL_ROLES);
+  const [roles, setRoles] = useState<SysRole[]>(INITIAL_ROLES);
   const [selectedRole, setSelectedRole] = useState<SysRole>(INITIAL_ROLES[0]);
-  const [permissions] = useState<Permission[]>(INITIAL_PERMISSIONS);
+  const [permissions, setPermissions] = useState<Permission[]>(INITIAL_PERMISSIONS);
+  const [selectedPerms, setSelectedPerms] = useState<string[]>(INITIAL_ROLES[0].permissions);
+  const [showPermMgr, setShowPermMgr] = useState(false);
+  const [newPerm, setNewPerm] = useState<{code:string;name:string;module:string;description?:string}>({code:'',name:'',module:'System'});
+  const [deleteRoleArmed, setDeleteRoleArmed] = useState(false);
+  const [deletePermArmed, setDeletePermArmed] = useState(false);
+  const [meRole, setMeRole] = useState<string>('teacher');
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const api = await import('../logic/api');
+        try {
+          const me = await api.usersAPI.getMe();
+          setMeRole(me.role || 'teacher');
+        } catch {}
+        const ps = await api.rbacAPI.getPermissions();
+        setPermissions(ps as any);
+        const rs = await api.rbacAPI.listRoles();
+        setRoles(rs as any);
+        if ((rs as any[]).length > 0) {
+          setSelectedRole(rs[0] as any);
+          setSelectedPerms(((rs as any[])[0] as any).permissions || []);
+        }
+      } catch {}
+    })();
+  }, []);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[600px]">
@@ -99,13 +150,25 @@ export const RolePermissionManager = () => {
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col">
         <div className="p-4 border-b border-gray-100 flex justify-between items-center">
           <h3 className="font-bold text-gray-900">角色列表</h3>
-          <button className="p-1 hover:bg-gray-100 rounded"><Plus className="w-4 h-4 text-gray-600"/></button>
+          <button className="p-1 hover:bg-gray-100 rounded" onClick={async () => {
+            const name = prompt('请输入角色名称', '') || '';
+            if (!name) return;
+            try {
+              const api = await import('../logic/api');
+              const r = await api.rbacAPI.createRole(name);
+              const rs = await api.rbacAPI.listRoles();
+              setRoles(rs as any);
+              const found = (rs as any[]).find((x:any) => x.id === r.id) || r;
+              setSelectedRole(found as any);
+              setSelectedPerms((found as any).permissions || []);
+            } catch {}
+          }}><Plus className="w-4 h-4 text-gray-600"/></button>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {roles.map(role => (
             <div 
               key={role.id}
-              onClick={() => setSelectedRole(role)}
+              onClick={() => { setSelectedRole(role); setSelectedPerms(role.permissions || []); }}
               className={`p-3 rounded-lg cursor-pointer flex justify-between items-center transition ${selectedRole.id === role.id ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-gray-50 text-gray-700'}`}
             >
               <div>
@@ -127,14 +190,50 @@ export const RolePermissionManager = () => {
                <p className="text-sm text-gray-500 mt-1">{selectedRole.description}</p>
              </div>
              <div className="space-x-2">
-                <button className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700">保存权限</button>
-                {!selectedRole.isSystem && <button className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded hover:bg-red-50">删除角色</button>}
+               <div className="inline-flex items-center mr-2">
+                 <span className="text-xs text-gray-500 mr-2">删除保护</span>
+                 <button
+                   onClick={() => setDeleteRoleArmed(v => !v)}
+                   className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${deleteRoleArmed ? 'bg-red-600' : 'bg-gray-200'}`}
+                 >
+                   <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${deleteRoleArmed ? 'translate-x-5' : 'translate-x-0'}`} />
+                 </button>
+               </div>
+               <button className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700" onClick={async () => {
+                 try {
+                   const api = await import('../logic/api');
+                   await api.rbacAPI.savePermissions((selectedRole as any).id, selectedPerms);
+                   const rs = await api.rbacAPI.listRoles();
+                   setRoles(rs as any);
+                   const updated = (rs as any[]).find((x:any) => x.id === (selectedRole as any).id) || selectedRole;
+                   setSelectedRole(updated as any);
+                   setSelectedPerms((updated as any).permissions || []);
+                 } catch {}
+               }}>保存权限</button>
+                {!selectedRole.isSystem && meRole === 'sys_admin' && <button className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded hover:bg-red-50" onClick={async () => {
+                 if (!deleteRoleArmed) { alert('请先开启删除保护开关'); return; }
+                 if (!confirm(`确认删除角色 ${selectedRole.name}?`)) return;
+                 try {
+                   const api = await import('../logic/api');
+                   await api.rbacAPI.deleteRole((selectedRole as any).id);
+                   const rs = await api.rbacAPI.listRoles();
+                   setRoles(rs as any);
+                   if ((rs as any[]).length > 0) {
+                     setSelectedRole((rs as any[])[0] as any);
+                     setSelectedPerms(((rs as any[])[0] as any).permissions || []);
+                   }
+                   setDeleteRoleArmed(false);
+                 } catch {}
+                }}>删除角色</button>}
              </div>
-           </div>
+          </div>
         </div>
-        
+
         <div className="p-6 flex-1 overflow-y-auto">
           <h4 className="text-sm font-bold text-gray-500 uppercase mb-4">权限分配</h4>
+          <div className="mb-4">
+            {meRole === 'sys_admin' && <button className="px-3 py-1.5 text-sm border rounded" onClick={() => setShowPermMgr(true)}>维护权限目录</button>}
+          </div>
           <div className="grid grid-cols-2 gap-4">
             {['System', 'Research'].map(module => (
               <div key={module} className="border border-gray-200 rounded-lg p-4">
@@ -144,8 +243,11 @@ export const RolePermissionManager = () => {
                     <label key={p.code} className="flex items-center space-x-2 cursor-pointer">
                       <input 
                         type="checkbox" 
-                        defaultChecked={selectedRole.permissions.includes(p.code) || selectedRole.permissions.includes('*')}
-                        disabled={selectedRole.permissions.includes('*')}
+                        checked={selectedPerms.includes(p.code)}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setSelectedPerms(prev => checked ? [...prev, p.code] : prev.filter(x => x !== p.code));
+                        }}
                         className="rounded text-indigo-600 focus:ring-indigo-500"
                       />
                       <span className="text-sm text-gray-700">{p.name}</span>
@@ -158,6 +260,107 @@ export const RolePermissionManager = () => {
           </div>
         </div>
       </div>
+      {showPermMgr && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg border border-gray-200 w-full max-w-2xl">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+              <h4 className="text-sm font-semibold text-gray-900">权限目录管理</h4>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center">
+                  <span className="text-xs text-gray-500 mr-2">删除保护</span>
+                  <button
+                    onClick={() => setDeletePermArmed(v => !v)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${deletePermArmed ? 'bg-red-600' : 'bg-gray-200'}`}
+                  >
+                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${deletePermArmed ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                <button onClick={() => setShowPermMgr(false)} className="text-gray-400 hover:text-gray-600">×</button>
+              </div>
+            </div>
+            <div className="p-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">编码</label>
+                  <input value={newPerm.code} onChange={e => setNewPerm({...newPerm, code: e.target.value})} className="border rounded px-2 py-1 text-sm w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">名称</label>
+                  <input value={newPerm.name} onChange={e => setNewPerm({...newPerm, name: e.target.value})} className="border rounded px-2 py-1 text-sm w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">模块</label>
+                  <select value={newPerm.module} onChange={e => setNewPerm({...newPerm, module: e.target.value})} className="border rounded px-2 py-1 text-sm w-full">
+                    <option>System</option>
+                    <option>Research</option>
+                  </select>
+                </div>
+              </div>
+              <div className="mt-3">
+                <label className="block text-xs text-gray-500 mb-1">描述</label>
+                <input value={newPerm.description || ''} onChange={e => setNewPerm({...newPerm, description: e.target.value})} className="border rounded px-2 py-1 text-sm w-full" />
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button className="px-3 py-1.5 text-sm border rounded" onClick={() => setShowPermMgr(false)}>取消</button>
+                <button className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded" onClick={async () => {
+                  if (!newPerm.code || !newPerm.name) return;
+                  try {
+                    const api = await import('../logic/api');
+                    await api.rbacAPI.createPermission(newPerm.code, newPerm.name, newPerm.module, newPerm.description);
+                    const ps = await api.rbacAPI.getPermissions();
+                    setPermissions(ps as any);
+                    setShowPermMgr(false);
+                    setNewPerm({code:'',name:'',module:'System'});
+                  } catch {}
+                }}>新增权限</button>
+              </div>
+              <div className="mt-6">
+                <h5 className="text-xs font-semibold text-gray-500 uppercase">已配置权限</h5>
+                <div className="mt-2 space-y-2">
+                  {['System','Research'].map(m => (
+                    <div key={m}>
+                      <div className="text-xs text-gray-400">{m}</div>
+                      <div className="divide-y border rounded">
+                        {(permissions || []).filter(p => p.module === m).map(p => (
+                          <div key={p.code} className="flex items-center justify-between px-3 py-2 text-sm">
+                            <div>
+                              <div className="font-medium text-gray-800">{p.name}</div>
+                              <div className="text-xs text-gray-500 font-mono">{p.code}</div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button className="text-indigo-600 hover:text-indigo-900" onClick={async () => {
+                                const name = prompt('修改名称', p.name) || '';
+                                if (!name) return;
+                                try {
+                                  const api = await import('../logic/api');
+                                  await api.rbacAPI.updatePermission((p as any).id, { name });
+                                  const ps = await api.rbacAPI.getPermissions();
+                                  setPermissions(ps as any);
+                                } catch {}
+                              }}>编辑</button>
+                              <button className="text-red-600 hover:text-red-900" onClick={async () => {
+                                if (!deletePermArmed) { alert('请先开启删除保护开关'); return; }
+                                if (!confirm(`确认删除 ${p.name}?`)) return;
+                                try {
+                                  const api = await import('../logic/api');
+                                  await api.rbacAPI.deletePermission((p as any).id);
+                                  const ps = await api.rbacAPI.getPermissions();
+                                  setPermissions(ps as any);
+                                  setDeletePermArmed(false);
+                                } catch {}
+                              }}>删除</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -166,8 +369,17 @@ export const RolePermissionManager = () => {
  * 3. Enhanced Audit Log Explorer
  */
 export const AuditLogExplorer = () => {
-  const [logs] = useState<AuditLog[]>(INITIAL_LOGS);
+  const [logs, setLogs] = useState<AuditLog[]>(INITIAL_LOGS);
   const [viewingDiff, setViewingDiff] = useState<AuditLog | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const api = await import('../logic/api');
+        const list = await api.logsAPI.getAll();
+        setLogs(list as any);
+      } catch {}
+    })();
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -257,7 +469,20 @@ export const AuditLogExplorer = () => {
  * 4. Master Data Manager (Departments)
  */
 export const MasterDataManager = () => {
-  const [departments] = useState<Department[]>(INITIAL_DEPARTMENTS);
+  const [departments, setDepartments] = useState<Department[]>(INITIAL_DEPARTMENTS);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newCode, setNewCode] = useState('');
+  const [newName, setNewName] = useState('');
+  const [deleteDeptArmed, setDeleteDeptArmed] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const api = await import('../logic/api');
+        const ds = await api.departmentAPI.list();
+        setDepartments(ds as any);
+      } catch {}
+    })();
+  }, []);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
@@ -267,8 +492,22 @@ export const MasterDataManager = () => {
           <p className="text-sm text-gray-500">统一管理学院、学科、职称等基础数据。</p>
         </div>
         <div className="flex gap-2">
-           <button className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50">下载导入模板</button>
-           <button className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700">添加数据</button>
+           <button className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50" onClick={() => {
+             const csv = "编码,名称\nCS,计算机学院\n";
+             const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+             const url = URL.createObjectURL(blob);
+             const a = document.createElement('a'); a.href = url; a.download = `departments_template.csv`; a.click(); URL.revokeObjectURL(url);
+           }}>下载导入模板</button>
+           <button className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700" onClick={() => setShowAdd(true)}>添加数据</button>
+           <div className="flex items-center ml-2">
+             <span className="text-xs text-gray-500 mr-2">删除保护</span>
+             <button
+               onClick={() => setDeleteDeptArmed(v => !v)}
+               className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${deleteDeptArmed ? 'bg-red-600' : 'bg-gray-200'}`}
+             >
+               <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${deleteDeptArmed ? 'translate-x-5' : 'translate-x-0'}`} />
+             </button>
+           </div>
         </div>
       </div>
 
@@ -287,11 +526,49 @@ export const MasterDataManager = () => {
                  {dept.name}
               </div>
               <div className="w-1/4 text-right space-x-3 text-sm">
-                <button className="text-indigo-600 hover:text-indigo-900">编辑</button>
-                <button className="text-red-600 hover:text-red-900">删除</button>
+                <button className="text-indigo-600 hover:text-indigo-900" onClick={async () => {
+                  const name = prompt('请输入新名称', (dept as any).name) || '';
+                  if (!name) return;
+                  try {
+                    const api = await import('../logic/api');
+                    await api.departmentAPI.update((dept as any).code, name);
+                    const ds = await api.departmentAPI.list();
+                    setDepartments(ds as any);
+                  } catch {}
+                }}>编辑</button>
+                <button className="text-red-600 hover:text-red-900" onClick={async () => {
+                  if (!deleteDeptArmed) { alert('请先开启删除保护开关'); return; }
+                  if (!confirm(`确认删除 ${(dept as any).name}?`)) return;
+                  try {
+                    const api = await import('../logic/api');
+                    await api.departmentAPI.delete((dept as any).code);
+                    const ds = await api.departmentAPI.list();
+                    setDepartments(ds as any);
+                    setDeleteDeptArmed(false);
+                  } catch {}
+                }}>删除</button>
               </div>
             </div>
           ))}
+          {showAdd && (
+            <div className="px-6 py-4 border-t">
+              <div className="flex gap-2">
+                <input value={newCode} onChange={e => setNewCode(e.target.value)} placeholder="编码" className="border rounded px-2 py-1 text-sm" />
+                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="名称" className="border rounded px-2 py-1 text-sm" />
+                <button className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded" onClick={async () => {
+                  if (!newCode || !newName) return;
+                  try {
+                    const api = await import('../logic/api');
+                    await api.departmentAPI.create(newCode, newName);
+                    const ds = await api.departmentAPI.list();
+                    setDepartments(ds as any);
+                    setShowAdd(false); setNewCode(''); setNewName('');
+                  } catch {}
+                }}>保存</button>
+                <button className="px-3 py-1.5 text-sm border rounded" onClick={() => { setShowAdd(false); setNewCode(''); setNewName(''); }}>取消</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

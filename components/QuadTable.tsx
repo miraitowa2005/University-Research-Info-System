@@ -170,7 +170,14 @@ export const ResearchTable: React.FC<Props> = ({
                   <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">{item.authorName}</td>
                   <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">{item.date}</td>
                   <td className="whitespace-nowrap px-3 py-4 text-sm">
-                    {statusConfig.component}
+                    <div className="flex flex-col gap-1">
+                      {statusConfig.component}
+                      {(String(item.status).toLowerCase() === 'rejected' && (item as any)?.audit_remarks) && (
+                        <span className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-2 py-0.5">
+                          原因：{(item as any).audit_remarks}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6 opacity-0 group-hover:opacity-100 transition-opacity">
                     <div className="flex justify-end gap-3">

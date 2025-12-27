@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+alembic
+pydantic
+pydantic-settings
+email-validator  # Required for email validation
+aiosqlite  # For SQLite async operations
+aiomysql  # For MySQL async operations
+pymysql  # For MySQL sync operations (Alembic)
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart  # For handling form data in FastAPI

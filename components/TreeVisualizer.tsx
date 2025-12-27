@@ -31,7 +31,11 @@ export const StatsOverview: React.FC<Props> = ({ data }) => {
   // 分类统计（防御式）
   const papers = safeData.filter(i => getCategory(i) === '学术论文').length;
   const projects = safeData.filter(i => getCategory(i).includes('项目')).length;
-  const awards = safeData.filter(i => getCategory(i) === '科技奖励').length;
+  const awards = safeData.filter(i => {
+    const catOk = getCategory(i) === '科技奖励';
+    const level = (i as any)?.content_json?.level;
+    return catOk && !!level;
+  }).length;
   const patents = safeData.filter(i => getCategory(i) === '专利').length;
   const books = safeData.filter(i => getCategory(i) === '出版著作').length;
 

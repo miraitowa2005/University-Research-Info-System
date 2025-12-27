@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { User } from '../types';
-import { LayoutDashboard, FileText, Upload, Users, Settings, Bell, BarChart3, LogOut, ClipboardList, Calendar, Database, Activity, Shield, FolderTree, Sliders } from 'lucide-react';
+import { LayoutDashboard, FileText, Upload, Users, UserCog, Bell, BarChart3, LogOut, ClipboardList, Calendar, Database, Activity, Shield, FolderTree, Sliders, CheckCircle } from 'lucide-react';
 
 interface Props {
   user: User;
@@ -16,7 +16,7 @@ export const Sidebar: React.FC<Props> = ({ user, activeView, onViewChange, onLog
     switch (user.role) {
       case 'teacher':
         return [
-          { id: 'profile', label: '个人中心', icon: Users },
+          { id: 'account', label: '个人中心', icon: UserCog },
           { id: 'my_research', label: '我的科研', icon: FileText },
           { id: 'apply', label: '项目申报', icon: Upload },
           { id: 'calendar', label: '科研日历', icon: Calendar },
@@ -25,7 +25,7 @@ export const Sidebar: React.FC<Props> = ({ user, activeView, onViewChange, onLog
       case 'research_admin':
         return [
           { id: 'dashboard', label: '工作台', icon: LayoutDashboard },
-          { id: 'audit', label: '科研审核', icon: CheckCircleIcon },
+          { id: 'audit', label: '科研审核', icon: CheckCircle },
           { id: 'stats', label: '统计报表', icon: BarChart3 },
           { id: 'publish', label: '发布通知', icon: Bell },
           { id: 'templates', label: '审核模板', icon: FileText },

@@ -30,6 +30,7 @@ export interface FormField {
 // Subtype Definition (e.g., configuration for "Vertical Project")
 export interface ResearchSubtype {
   id: string;
+  db_id?: number;
   name: string;
   category: ResearchCategory;
   fields: FormField[];
@@ -46,6 +47,7 @@ export interface ResearchItem {
   details?: string; // Summary string for display
   content_json?: Record<string, any>; // Dynamic data storage
   teamMembers?: string[];
+  subtype_id?: number;
 }
 
 export interface Notification {

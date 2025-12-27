@@ -16,6 +16,7 @@ export const DynamicForm: React.FC<Props> = ({ subtypes, currentUser, onSubmit, 
     teamMembers: '',
   });
   const [dynamicData, setDynamicData] = useState<Record<string, any>>({});
+  const [backendSubtypeMap, setBackendSubtypeMap] = useState<Record<string, number>>({});
 
   const activeSubtype = subtypes.find(s => s.id === selectedTypeId);
 
@@ -23,6 +24,17 @@ export const DynamicForm: React.FC<Props> = ({ subtypes, currentUser, onSubmit, 
   useEffect(() => {
     setDynamicData({});
   }, [selectedTypeId]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const subs = await (await import('../logic/api')).researchAPI.listSubtypes();
+        const map: Record<string, number> = {};
+        subs.forEach((s: any) => { map[s.name] = s.id; });
+        setBackendSubtypeMap(map);
+      } catch {}
+    })();
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,9 +52,9 @@ export const DynamicForm: React.FC<Props> = ({ subtypes, currentUser, onSubmit, 
       authorId: currentUser.id,
       authorName: currentUser.name,
       category: activeSubtype.category,
-      subtype_id: activeSubtype.db_id, // Use the correct integer DB ID
+      subtype_id: backendSubtypeMap[activeSubtype.name] ?? activeSubtype.db_id,
       date: new Date().toISOString().split('T')[0],
-      status: 'Draft',
+      status: 'Pending',
       details: details,
       content_json: dynamicData,
       teamMembers: baseData.teamMembers.split(/[,，、]/).map(s => s.trim()).filter(Boolean)
