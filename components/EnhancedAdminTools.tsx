@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { ProjectPhase, User, ResearchTag, ResearchItem } from '../types';
 import { INITIAL_TAGS } from '../logic/compiler';
-import { BarChart3, Users, Clock, Send, Download, Plus, Tag, X, Filter, RefreshCw, Megaphone, Paperclip, AlertTriangle, CheckCircle2, FileText, Eye } from 'lucide-react';
+import { BarChart3, Users, Clock, Send, Download, Plus, Tag, X, Filter, RefreshCw, Megaphone, Paperclip, AlertTriangle, CheckCircle2, FileText, Eye, Shield, Lock, Building2 } from 'lucide-react';
 import { projectAPI } from '../logic/api';
 import { toast } from 'react-toastify';
 
@@ -241,14 +241,19 @@ export const ProjectLifecycleManager = () => {
                     {submissions[parseInt(phase.id)]?.slice(0, 5).map(submission => (
                       <div key={submission.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
                         <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                          <span className="text-xs text-gray-700">{submission.applicant.name}</span>
-                          <span className="text-xs text-gray-500">({submission.applicant.email})</span>
+                          <div className={`w-2 h-2 rounded-full ${submission.status==='submitted'?'bg-green-500':submission.status==='returned'?'bg-red-500':'bg-gray-400'}`}></div>
+                          <span className="text-xs text-gray-700">{submission.applicant?.name || submission.applicant_id}</span>
+                          {submission.applicant?.email && <span className="text-xs text-gray-500">({submission.applicant.email})</span>}
                         </div>
                         <div className="flex items-center gap-2">
                           <span className={`text-xs px-2 py-0.5 rounded-full ${submission.status === 'submitted' ? 'bg-green-100 text-green-700' : submission.status === 'returned' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}`}>
                             {submission.status === 'submitted' ? '已提交' : submission.status === 'returned' ? '已退回' : '未开始'}
                           </span>
+                          {submission.return_reason && (
+                            <span className="text-[11px] text-red-600 max-w-[160px] truncate" title={submission.return_reason}>
+                              {submission.return_reason}
+                            </span>
+                          )}
                           {submission.submitted_at && (
                             <span className="text-xs text-gray-500">
                               {new Date(submission.submitted_at).toLocaleTimeString()}
@@ -555,9 +560,9 @@ export const NoticePublisher = () => {
             <div className="p-2 bg-indigo-600 rounded-lg mr-4 shadow-lg shadow-indigo-500/30 text-white">
               <Megaphone className="w-6 h-6" />
             </div>
-            通知发布中心
+            申报发布中心
           </h2>
-          <p className="text-slate-500 mt-2 ml-14 font-medium">向全校科研人员传达重要政策与公告</p>
+          <p className="text-slate-500 mt-2 ml-14 font-medium">创建新的科研申报批次或通知</p>
         </div>
         <div className="hidden md:flex gap-3">
           <button className="flex items-center px-4 py-2 bg白 border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition shadow-sm">
@@ -611,29 +616,26 @@ export const NoticePublisher = () => {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center">
-              <Users className="w-4 h-4 mr-2 text-indigo-500" /> 接收对象
+          <div className="bg-slate-50 rounded-2xl border border-slate-200 p-6 shadow-inner">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center">
+              <Shield className="w-3 h-3 mr-1.5" /> 发布权限管控
             </h3>
-            <div className="flex flex-wrap gap-2">
-              {recipientOptions.map(opt => {
-                const isActive = recipients.includes(opt.id);
-                return (
-                  <button
-                    key={opt.id}
-                    onClick={() => toggleRecipient(opt.id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-200 ${
-                      isActive
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200'
-                        : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
+            <div className="bg-white border border-indigo-100 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
+                <Building2 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs text-slate-400 mb-0.5">当前归属学院</div>
+                <div className="text-sm font-bold text-slate-800">计算机科学与技术学院</div>
+                <div className="mt-2 flex items-center text-[10px] text-indigo-600 bg-indigo-50 px-2 py-1 rounded w-fit">
+                  <Lock className="w-3 h-3 mr-1" />
+                  范围已锁定
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-slate-400 mt-3 leading-tight">* 默认发送给全体人员，点击上方标签可精准推送。</p>
+            <p className="text-[10px] text-slate-400 mt-3 leading-relaxed">
+              * 根据系统安全策略，您仅有权向本学院教师发布申报通知。跨学院发布请联系校级管理员。
+            </p>
           </div>
 
           <div className={`rounded-2xl border p-6 shadow-sm transition-colors duration-300 ${priority === 'high' ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-200'}`}>

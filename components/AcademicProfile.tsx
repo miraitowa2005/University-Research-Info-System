@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import IMEInput from './ui/IMEInput';
 import { User, ResearchItem } from '../types';
 import { usersAPI, departmentAPI } from '../logic/api';
+// no-op
 import { 
   User as UserIcon, Mail, Phone, MapPin, Briefcase, GraduationCap, 
   Lock, Save, Plus, Trash2, Calendar, Shield, Layout,
@@ -28,6 +30,7 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
   const [profileForm, setProfileForm] = useState<Partial<User>>({});
   const [pwdForm, setPwdForm] = useState({ old: '', new: '' });
   const [experiences, setExperiences] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<Array<{ code: string; name: string }>>([]);
   
   // 经历编辑状态
   const [isAddingExp, setIsAddingExp] = useState(false);
@@ -54,15 +57,34 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
     } catch {}
   };
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await departmentAPI.list();
+        const mapped = (list || []).map((d: any) => ({ code: d.code, name: d.name }));
+        setDepartments(mapped);
+      } catch {}
+    })();
+  }, []);
+
   const handleUpdateProfile = async () => {
     if (!user) return;
     setLoading(true);
     try {
-      const deptCode = profileForm.department ? await departmentAPI.normalize(profileForm.department) : null;
-      await usersAPI.updateMe({
+      const deptCode = profileForm.department_code
+        ? profileForm.department_code
+        : (profileForm.department ? await departmentAPI.normalize(profileForm.department) : null);
+      const updated = await usersAPI.updateMe({
         ...profileForm,
         department_code: deptCode || undefined
       });
+      if (updated) {
+        setProfileForm(prev => ({
+          ...prev,
+          ...updated,
+          name: (updated as any).full_name || (updated as any).name || prev.name
+        }));
+      }
       toast.success('个人档案已保存');
       if (onProfileUpdate) onProfileUpdate();
     } catch (e: any) {
@@ -153,22 +175,46 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
   );
 
   // 现代化的输入框组件
-  const ModernInput = ({ label, value, onChange, icon: Icon, type = "text", placeholder, disabled, className }: any) => (
-    <div className={`group ${className}`}>
-      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">{label}</label>
-      <div className={`relative flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 transition-all duration-200 focus-within:bg-white focus-within:border-indigo-500 focus-within:ring-4 focus-within:ring-indigo-500/10 hover:border-slate-300 ${disabled ? 'opacity-60 cursor-not-allowed bg-slate-100' : ''}`}>
-        {Icon && <Icon className="w-4 h-4 text-slate-400 mr-3 group-focus-within:text-indigo-500 transition-colors" />}
-        <input 
-          type={type}
-          disabled={disabled}
-          className="bg-transparent border-none outline-none text-sm text-slate-800 placeholder-slate-400 w-full font-medium"
-          value={value || ''}
-          onChange={e => onChange(e.target.value)}
-          placeholder={placeholder}
-        />
+  const ModernInput = ({ label, value, onChange, icon: Icon, type = "text", placeholder, disabled, className }: any) => {
+    return (
+      <div className={`group ${className}`}>
+        <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">{label}</label>
+        <div className={`relative flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 transition-all duration-200 focus-within:bg-white focus-within:border-indigo-500 focus-within:ring-4 focus-within:ring-indigo-500/10 hover:border-slate-300 ${disabled ? 'opacity-60 cursor-not-allowed bg-slate-100' : ''}`}>
+          {Icon && <Icon className="w-4 h-4 text-slate-400 mr-3 group-focus-within:text-indigo-500 transition-colors" />}
+          <IMEInput
+            type={type}
+            disabled={disabled}
+            className="bg-transparent border-none outline-none text-sm text-slate-800 placeholder-slate-400 w-full font-medium"
+            value={value || ''}
+            onChange={onChange}
+            placeholder={placeholder}
+          />
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
+  
+  const ModernSelect = ({ label, value, onChange, icon: Icon, options, className }: any) => {
+    return (
+      <div className={`group ${className}`}>
+        <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">{label}</label>
+        <div className="relative flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 transition-all duration-200 focus-within:bg-white focus-within:border-indigo-500 focus-within:ring-4 focus-within:ring-indigo-500/10 hover:border-slate-300">
+          {Icon && <Icon className="w-4 h-4 text-slate-400 mr-3 group-focus-within:text-indigo-500 transition-colors" />}
+          <select
+            className="bg-transparent border-none outline-none text-sm text-slate-800 placeholder-slate-400 w-full font-medium appearance-none"
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value)}
+          >
+            <option value="">请选择学院</option>
+            {options.map((opt: any) => (
+              <option key={opt.code} value={opt.code}>{opt.name}</option>
+            ))}
+          </select>
+          <ChevronRight className="absolute right-3 w-4 h-4 text-slate-400 pointer-events-none rotate-90" />
+        </div>
+      </div>
+    );
+  };
 
   // === 视图模式：学术主页 (Profile View) ===
   if (mode === 'view') {
@@ -180,7 +226,10 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
         <div className="relative mb-24">
           {/* Banner */}
           <div className="h-64 rounded-3xl bg-gradient-to-br from-slate-900 via-[#0B1120] to-indigo-900 relative overflow-hidden shadow-2xl">
-            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+            <div className="absolute inset-0">
+              <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+              <div className="absolute inset-0 bg-white/5 mix-blend-overlay"></div>
+            </div>
             <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
             
             {/* Action Buttons on Banner */}
@@ -195,13 +244,13 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
           </div>
 
           {/* Profile Info Overlay */}
-          <div className="absolute -bottom-16 left-8 md:left-12 flex items-end">
+          <div className="absolute -bottom-[-50px] left-8 md:left-12 flex items-end">
             <div className="relative">
               <div className="w-32 h-32 md:w-40 md:h-40 rounded-full border-4 border-white bg-white shadow-xl overflow-hidden">
                 {user.avatarUrl ? (
                   <img src={user.avatarUrl} className="w-full h-full object-cover" alt={user.name} />
                 ) : (
-                  <div className="w-full h-full bg-slate-100 flex items-center justify-center text-5xl font-bold text-slate-300">
+                  <div className="w-full h-full bg-slate-200 flex items-center justify-center text-5xl font-bold text-slate-600">
                     {user.name.charAt(0)}
                   </div>
                 )}
@@ -209,17 +258,19 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
               <div className="absolute bottom-2 right-2 w-6 h-6 bg-emerald-500 border-4 border-white rounded-full"></div>
             </div>
             
-            <div className="mb-2 ml-6 text-slate-800">
-              <h1 className="text-3xl md:text-4xl font-extrabold flex items-center gap-3">
-                {user.name}
-                <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-md border border-indigo-200 align-middle">
-                  {(user as any).title || '教职工'}
-                </span>
-              </h1>
-              <div className="flex items-center text-slate-500 mt-2 font-medium">
-                <Briefcase className="w-4 h-4 mr-1.5" /> {(user as any).department || '未分配院系'}
-                <span className="mx-2 text-slate-300">|</span>
-                <Mail className="w-4 h-4 mr-1.5" /> {user.email}
+            <div className="mb-2 ml-6">
+              <div className="bg-white/80 backdrop-blur-md rounded-xl px-4 py-3 border border-white/60 shadow">
+                <h1 className="text-3xl md:text-4xl font-extrabold flex items-center gap-3 text-slate-900">
+                  {user.name}
+                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-md border border-indigo-200 align-middle">
+                    {(user as any).title || '教职工'}
+                  </span>
+                </h1>
+                <div className="flex items-center text-slate-600 mt-2 font-medium">
+                  <Briefcase className="w-4 h-4 mr-1.5" /> {(user as any).department || '未分配院系'}
+                  <span className="mx-2 text-slate-300">|</span>
+                  <Mail className="w-4 h-4 mr-1.5" /> {user.email}
+                </div>
               </div>
             </div>
           </div>
@@ -388,11 +439,25 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <ModernInput label="真实姓名" value={profileForm.name} onChange={(v: string) => setProfileForm({...profileForm, name: v})} icon={UserIcon} />
-                <ModernInput label="工号/职工号" value={(profileForm as any).employee_id} onChange={(v: string) => setProfileForm({...profileForm, employee_id: v})} icon={CreditCardIcon} disabled />
+                <ModernInput label="工号/职工号" value={(profileForm as any).employee_id} onChange={(v: string) => setProfileForm({...profileForm, employee_id: v})} icon={CreditCardIcon} placeholder="例如：213" />
                 <ModernInput label="电子邮箱" value={profileForm.email} onChange={(v: string) => setProfileForm({...profileForm, email: v})} icon={Mail} />
                 <ModernInput label="联系电话" value={(profileForm as any).phone} onChange={(v: string) => setProfileForm({...profileForm, phone: v})} icon={Phone} />
                 <ModernInput className="md:col-span-2" label="办公地点" value={(profileForm as any).office_location} onChange={(v: string) => setProfileForm({...profileForm, office_location: v})} icon={MapPin} />
-                <ModernInput className="md:col-span-2" label="所属院系/部门" value={profileForm.department} onChange={(v: string) => setProfileForm({...profileForm, department: v})} icon={Briefcase} />
+                <ModernSelect
+                  className="md:col-span-2"
+                  label="所属院系/部门"
+                  value={profileForm.department_code}
+                  onChange={(code: string) => {
+                    const item = departments.find(d => d.code === code);
+                    setProfileForm({
+                      ...profileForm,
+                      department: item ? item.name : '',
+                      department_code: code || undefined,
+                    });
+                  }}
+                  icon={Briefcase}
+                  options={departments}
+                />
               </div>
             </div>
           )}

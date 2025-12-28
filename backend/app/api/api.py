@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.endpoints import login, users, research, notices, departments, logs, admin, rbac
+from app.api.endpoints import login, users, research, notices, departments, logs, admin, rbac, projects
 
 api_router = APIRouter()
 api_router.include_router(login.router, tags=["login"])
@@ -11,3 +11,4 @@ api_router.include_router(departments.router, prefix="/departments", tags=["depa
 api_router.include_router(logs.router, prefix="/logs", tags=["logs"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(rbac.router, prefix="/rbac", tags=["rbac"])
+api_router.include_router(projects.router, prefix="/projects", tags=["projects"])

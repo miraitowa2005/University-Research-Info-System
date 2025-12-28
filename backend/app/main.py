@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from app.db.session import engine
+from app.core.security import get_password_hash
 
 from app.api.api import api_router
 from app.core.config import settings
@@ -20,6 +21,7 @@ if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_origin_regex=".*",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -31,6 +33,33 @@ async def ensure_mysql_role_column():
     if "mysql" not in url:
         return
     async with engine.begin() as conn:
+        # Ensure users table exists
+        await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            full_name VARCHAR(255),
+            email VARCHAR(255) UNIQUE NOT NULL,
+            hashed_password VARCHAR(255) NOT NULL,
+            is_active TINYINT(1) DEFAULT 1,
+            is_superuser TINYINT(1) DEFAULT 0,
+            role VARCHAR(50) DEFAULT 'teacher',
+            department VARCHAR(255),
+            department_code VARCHAR(50),
+            dept_id BIGINT NULL,
+            employee_id VARCHAR(100),
+            gender VARCHAR(20),
+            birth_date DATE NULL,
+            phone VARCHAR(50),
+            office_location VARCHAR(255),
+            highest_education VARCHAR(100),
+            degree VARCHAR(100),
+            alma_mater VARCHAR(255),
+            major VARCHAR(255),
+            research_direction VARCHAR(500),
+            advisor_qualification VARCHAR(50),
+            profile_public TINYINT(1) DEFAULT 0
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """))
         res = await conn.execute(text("SHOW COLUMNS FROM users"))
         cols = [row[0] for row in res.fetchall()]
         if "role" not in cols:
@@ -172,6 +201,7 @@ async def ensure_mysql_role_column():
         await ensure_col("research_direction", "research_direction VARCHAR(500) NULL")
         await ensure_col("advisor_qualification", "advisor_qualification VARCHAR(50) NULL")
         await ensure_col("profile_public", "profile_public TINYINT(1) DEFAULT 0")
+        await ensure_col("dept_id", "dept_id BIGINT NULL")
         # Ensure users have department fields
         res_users = await conn.execute(text("SHOW COLUMNS FROM users"))
         ucols = [row[0] for row in res_users.fetchall()]
@@ -179,6 +209,15 @@ async def ensure_mysql_role_column():
             await conn.execute(text("ALTER TABLE users ADD COLUMN department VARCHAR(255)"))
         if "department_code" not in ucols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN department_code VARCHAR(50)"))
+        # Seed default admin if no users present
+        res_count = await conn.execute(text("SELECT COUNT(*) FROM users"))
+        count = res_count.scalar() or 0
+        if count == 0:
+            hpw = get_password_hash("admin123")
+            await conn.execute(text("""
+            INSERT INTO users (full_name, email, hashed_password, is_active, is_superuser, role, department, department_code)
+            VALUES (:name, :email, :hpw, 1, 1, 'sys_admin', '计算机学院', 'CS')
+            """), {"name": "System Admin", "email": "admin@local", "hpw": hpw})
         # Ensure notice recipients table exists
         await conn.execute(text("""
         CREATE TABLE IF NOT EXISTS notice_recipients (

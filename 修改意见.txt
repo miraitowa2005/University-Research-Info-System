@@ -1,0 +1,595 @@
+这是一个非常关键的业务闭环补充！之前的设计中，管理员发布的更多是“通知公告（Notice）”，而你现在需要的是一个**具有业务属性的“申报批次（Batch）”**。
+
+这就好比：通知是“请大家注意”，而批次是“请大家在2025-12-31前把材料交到这里”。**批次是具有生命周期（开始时间、截止时间、状态）的实体对象**。
+
+为了实现这个“发布即生效，教师可见”的功能，我们需要对**管理员端的发布组件**进行功能升级，并明确后端的数据流转。
+
+---
+
+### 🏛️ 业务逻辑架构图
+
+1. **管理员操作**：填写批次名称、设置截止日期 -> 点击发布 -> 后端写入 `project_batches` 表。
+2. **数据流转**：该记录携带 `dept_id`（学院）和 `status=1`（开放中）。
+3. **教师端响应**：教师进入申报页 -> 自动请求 `GET /batches` -> 后端根据教师 `dept_id` 过滤 -> 前端下拉框出现新批次。
+
+---
+
+### 💻 1. 前端改造：管理员发布中心 (SystemAdminTools.tsx)
+
+我将升级 `NoticePublisher` 组件，将其改造为 **“申报批次发布器”**。增加了**截止日期选择**和**批次类型**，让它看起来更像是一个行政指令下发工具。
+
+请更新 `components/SystemAdminTools.tsx` 中的 `NoticePublisher` 部分：
+
+```tsx
+// 引入 Calendar 图标
+import { Calendar as CalendarIcon } from 'lucide-react'; 
+
+/**
+ * 📢 BatchPublisher - 申报批次发布器 (升级版)
+ * 功能：管理员发布一个新的科研申报批次，发布后自动对本学院教师可见。
+ */
+export const NoticePublisher = () => {
+  const [title, setTitle] = useState(''); // 批次名称
+  const [content, setContent] = useState(''); // 详细要求
+  const [deadline, setDeadline] = useState(''); // 截止日期 (新增核心字段)
+  const [priority, setPriority] = useState<'normal' | 'high'>('normal');
+  const [isSending, setIsSending] = useState(false);
+
+  // 模拟当前管理员身份 (需从全局状态获取)
+  const currentAdmin = {
+    name: 'Admin User',
+    deptId: 'DEPT_CS_001',
+    deptName: '计算机科学与技术学院'
+  };
+
+  const handlePublish = async () => {
+    // 1. 校验必填项
+    if (!title || !content || !deadline) {
+      toast.warning('请填写完整的批次名称、截止时间和申报要求');
+      return;
+    }
+    
+    setIsSending(true);
+
+    // 2. 构造符合数据库 project_batches 结构的数据包
+    const newBatchPayload = {
+      name: title,               // 对应 batch_name
+      description: content,      // 对应 requirements
+      deadline: deadline,        // 对应 end_time
+      publisher_dept_id: currentAdmin.deptId, // 核心：学院隔离锚点
+      status: 1,                 // 1 = 开放申报
+      create_time: new Date().toISOString()
+    };
+
+    // 3. 模拟调用后端 API (POST /api/batches)
+    console.log("🚀 [API Request] Creating Batch:", newBatchPayload);
+
+    // 模拟网络延迟
+    setTimeout(() => {
+      setIsSending(false);
+      // 4. 成功反馈
+      toast.success(`申报批次 [${title}] 已创建，本院教师现可选择申报！`);
+      
+      // 5. 重置表单
+      setTitle('');
+      setContent('');
+      setDeadline('');
+    }, 1500);
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+      
+      <div className="mb-8 flex items-end justify-between">
+        <div>
+          <h2 className="text-3xl font-black text-slate-800 flex items-center tracking-tight">
+            <div className="p-2 bg-indigo-600 rounded-lg mr-4 shadow-lg shadow-indigo-500/30 text-white">
+              <Megaphone className="w-6 h-6" />
+            </div>
+            新建申报批次
+          </h2>
+          <p className="text-slate-500 mt-2 ml-14 font-medium">
+            发布新的科研项目申报任务，发布后将立即对本院教师开放。
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* === 左侧：批次详情配置 === */}
+        <div className="lg:col-span-2 bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden flex flex-col min-h-[600px]">
+          {/* 状态指示条 */}
+          <div className={`h-2 w-full transition-colors duration-500 ${priority === 'high' ? 'bg-orange-500' : 'bg-indigo-500'}`}></div>
+          
+          <div className="p-8 flex-1 flex flex-col space-y-6">
+            
+            {/* 1. 批次名称 */}
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">申报批次名称</label>
+              <input
+                type="text"
+                placeholder="例如：2025年度国家自然科学基金申报（计算机学院批次）"
+                className="text-2xl font-bold text-slate-800 placeholder-slate-300 border-b-2 border-slate-100 outline-none w-full bg-transparent py-2 focus:border-indigo-500 transition-colors"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </div>
+
+            {/* 2. 截止时间设置 (New) */}
+            <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+              <div className="p-2 bg-white rounded-lg text-indigo-600 shadow-sm">
+                <CalendarIcon className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-bold text-slate-500 mb-1">申报截止日期</label>
+                <input 
+                  type="date" 
+                  className="bg-transparent font-mono font-bold text-slate-700 outline-none w-full"
+                  value={deadline}
+                  onChange={(e) => setDeadline(e.target.value)}
+                />
+              </div>
+              <div className="text-xs text-slate-400 border-l pl-4 border-slate-200">
+                系统将在该日期后<br/>自动关闭申报入口
+              </div>
+            </div>
+
+            {/* 3. 详细要求 */}
+            <div className="flex-1 flex flex-col">
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">申报具体要求 / 通知正文</label>
+              <textarea
+                placeholder="在此填写申报资格、材料要求、格式规范等..."
+                className="flex-1 w-full resize-none border border-slate-200 rounded-xl p-4 outline-none text-base text-slate-600 leading-relaxed placeholder-slate-300 bg-slate-50/30 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all"
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+              ></textarea>
+            </div>
+          </div>
+        </div>
+
+        {/* === 右侧：权限与发布控制 === */}
+        <div className="space-y-6">
+          
+          {/* 1. 学院锁定展示 (安全隔离) */}
+          <div className="bg-slate-50 rounded-2xl border border-slate-200 p-6 shadow-inner">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center">
+              <Shield className="w-3 h-3 mr-1.5" /> 发布范围锁定
+            </h3>
+            
+            <div className="bg-white border border-indigo-100 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
+                <Building2 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs text-slate-400 mb-0.5">仅限本院教师可见</div>
+                <div className="text-sm font-bold text-slate-800">{currentAdmin.deptName}</div>
+                <div className="mt-2 flex items-center text-[10px] text-emerald-600 bg-emerald-50 px-2 py-1 rounded w-fit border border-emerald-100">
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                  权限校验通过
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. 优先级 (UI展示) */}
+          <div className={`rounded-2xl border p-6 shadow-sm transition-colors duration-300 ${priority === 'high' ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-200'}`}>
+            <h3 className={`text-sm font-bold uppercase tracking-wider mb-4 flex items-center ${priority === 'high' ? 'text-orange-700' : 'text-slate-900'}`}>
+              <AlertTriangle className={`w-4 h-4 mr-2 ${priority === 'high' ? 'text-orange-600' : 'text-slate-400'}`} /> 
+              重要程度
+            </h3>
+            <div className="flex bg-white/50 p-1 rounded-xl border border-slate-200/50">
+              <button onClick={() => setPriority('normal')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${priority === 'normal' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-400 hover:text-slate-600'}`}>普通批次</button>
+              <button onClick={() => setPriority('high')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center ${priority === 'high' ? 'bg-orange-500 text-white shadow-md shadow-orange-200' : 'text-slate-400 hover:text-orange-600'}`}>紧急通知</button>
+            </div>
+          </div>
+
+          {/* 3. 提交按钮 */}
+          <button
+            onClick={handlePublish}
+            disabled={isSending}
+            className={`w-full py-4 rounded-xl font-bold text-white shadow-xl flex items-center justify-center transition-all active:scale-95 duration-300 ${
+              isSending 
+                ? 'bg-slate-400 cursor-not-allowed' 
+                : 'bg-gradient-to-r from-indigo-600 to-blue-600 shadow-indigo-500/30 hover:shadow-indigo-500/50'
+            }`}
+          >
+            {isSending ? (
+              <>
+                <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+                正在创建批次...
+              </>
+            ) : (
+              <>
+                <Save className="w-5 h-5 mr-2" />
+                确认发布申报
+              </>
+            )}
+          </button>
+          <p className="text-center text-xs text-slate-400">
+            发布后将立即出现在本院教师的申报列表中。
+          </p>
+
+        </div>
+      </div>
+    </div>
+  );
+};
+
+```
+
+---
+
+### 🔗 2. 后端联动逻辑 (Server Logic)
+
+为了让上述前端按钮生效，并在教师端体现，后端需要执行以下逻辑：
+
+#### A. 数据库表结构确认 (`project_batches`)
+
+确保你的数据库有这张表，并且包含 `status` 和 `dept_id`。
+
+```sql
+CREATE TABLE project_batches (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,          -- 批次名称
+    description TEXT,                    -- 批次描述/要求
+    deadline DATETIME NOT NULL,          -- 截止时间
+    dept_id BIGINT NOT NULL,             -- 【核心】所属学院ID
+    publisher_id BIGINT NOT NULL,        -- 发布人ID
+    status INT DEFAULT 1,                -- 1: 开放, 0: 关闭
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+```
+
+#### B. 教师端获取批次的 API (`GET /api/batches/available`)
+
+当教师打开“项目申报”页面时，前端会自动请求这个接口。后端必须做以下处理：
+
+1. **获取当前用户身份**：解析 Token，拿到 `current_teacher_id` 和 `current_teacher_dept_id`（例如：计算机学院）。
+2. **执行查询**：
+```sql
+SELECT * FROM project_batches 
+WHERE status = 1 
+AND deadline > NOW() 
+AND dept_id = {current_teacher_dept_id}; -- 【关键】只查本学院
+
+```
+
+
+3. **返回数据**：前端 `ProjectApplyForm.tsx` 接收到数据后，渲染下拉框。
+
+---
+
+### 🔄 3. 教师端效果 (无需修改代码，逻辑说明)
+
+你在之前的 `ProjectApplyForm.tsx` 中已经写好了这段逻辑：
+
+```tsx
+// ProjectApplyForm.tsx 片段回顾
+useEffect(() => {
+  (async () => {
+    // ...
+    // 这里的 mockResponse 以后会变成真实的 API 请求
+    // 后端只会返回 dept_id 与当前教师匹配的数据
+    // 前端再次过滤只是双重保险
+    const myDeptPhases = mockResponse.filter(p => p.dept_id === currentTeacher.deptId);
+    setPhases(myDeptPhases);
+    // ...
+  })();
+}, []);
+
+```
+
+**一旦管理员在 `NoticePublisher` 点击“发布”：**
+
+1. 数据写入数据库 `project_batches`，`dept_id` 为计算机学院。
+2. 计算机学院的教师刷新申报页 -> `useEffect` 触发 -> 拉取到最新的一条批次 -> **下拉框自动出现该选项**。
+3. **其他学院（如文学院）的教师**刷新页面 -> `dept_id` 不匹配 -> 拉取不到该数据 -> 下拉框不会出现。
+
+---
+
+### ✅ 总结
+
+这次修改主要是在 **“管理员端”** 增加了一个**正规的表单**来生产数据。
+
+* **以前**：发布通知可能只是发个文本公告，不产生业务关联。
+* **现在**：发布的是一个 **Structued Object (结构化对象)**，它包含 `deadline` 和 `dept_id`，这正是系统能够自动控制“谁能申报”、“何时截止”的关键数据源。
+
+
+最终确保：
+这是一个非常关键的业务闭环补充！之前的设计中，管理员发布的更多是“通知公告（Notice）”，而你现在需要的是一个**具有业务属性的“申报批次（Batch）”**。
+
+这就好比：通知是“请大家注意”，而批次是“请大家在2025-12-31前把材料交到这里”。**批次是具有生命周期（开始时间、截止时间、状态）的实体对象**。
+
+为了实现这个“发布即生效，教师可见”的功能，我们需要对**管理员端的发布组件**进行功能升级，并明确后端的数据流转。
+
+---
+
+### 🏛️ 业务逻辑架构图
+
+1. **管理员操作**：填写批次名称、设置截止日期 -> 点击发布 -> 后端写入 `project_batches` 表。
+2. **数据流转**：该记录携带 `dept_id`（学院）和 `status=1`（开放中）。
+3. **教师端响应**：教师进入申报页 -> 自动请求 `GET /batches` -> 后端根据教师 `dept_id` 过滤 -> 前端下拉框出现新批次。
+
+---
+
+### 💻 1. 前端改造：管理员发布中心 (SystemAdminTools.tsx)
+
+我将升级 `NoticePublisher` 组件，将其改造为 **“申报批次发布器”**。增加了**截止日期选择**和**批次类型**，让它看起来更像是一个行政指令下发工具。
+
+请更新 `components/SystemAdminTools.tsx` 中的 `NoticePublisher` 部分：
+
+```tsx
+// 引入 Calendar 图标
+import { Calendar as CalendarIcon } from 'lucide-react'; 
+
+/**
+ * 📢 BatchPublisher - 申报批次发布器 (升级版)
+ * 功能：管理员发布一个新的科研申报批次，发布后自动对本学院教师可见。
+ */
+export const NoticePublisher = () => {
+  const [title, setTitle] = useState(''); // 批次名称
+  const [content, setContent] = useState(''); // 详细要求
+  const [deadline, setDeadline] = useState(''); // 截止日期 (新增核心字段)
+  const [priority, setPriority] = useState<'normal' | 'high'>('normal');
+  const [isSending, setIsSending] = useState(false);
+
+  // 模拟当前管理员身份 (需从全局状态获取)
+  const currentAdmin = {
+    name: 'Admin User',
+    deptId: 'DEPT_CS_001',
+    deptName: '计算机科学与技术学院'
+  };
+
+  const handlePublish = async () => {
+    // 1. 校验必填项
+    if (!title || !content || !deadline) {
+      toast.warning('请填写完整的批次名称、截止时间和申报要求');
+      return;
+    }
+    
+    setIsSending(true);
+
+    // 2. 构造符合数据库 project_batches 结构的数据包
+    const newBatchPayload = {
+      name: title,               // 对应 batch_name
+      description: content,      // 对应 requirements
+      deadline: deadline,        // 对应 end_time
+      publisher_dept_id: currentAdmin.deptId, // 核心：学院隔离锚点
+      status: 1,                 // 1 = 开放申报
+      create_time: new Date().toISOString()
+    };
+
+    // 3. 模拟调用后端 API (POST /api/batches)
+    console.log("🚀 [API Request] Creating Batch:", newBatchPayload);
+
+    // 模拟网络延迟
+    setTimeout(() => {
+      setIsSending(false);
+      // 4. 成功反馈
+      toast.success(`申报批次 [${title}] 已创建，本院教师现可选择申报！`);
+      
+      // 5. 重置表单
+      setTitle('');
+      setContent('');
+      setDeadline('');
+    }, 1500);
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+      
+      <div className="mb-8 flex items-end justify-between">
+        <div>
+          <h2 className="text-3xl font-black text-slate-800 flex items-center tracking-tight">
+            <div className="p-2 bg-indigo-600 rounded-lg mr-4 shadow-lg shadow-indigo-500/30 text-white">
+              <Megaphone className="w-6 h-6" />
+            </div>
+            新建申报批次
+          </h2>
+          <p className="text-slate-500 mt-2 ml-14 font-medium">
+            发布新的科研项目申报任务，发布后将立即对本院教师开放。
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* === 左侧：批次详情配置 === */}
+        <div className="lg:col-span-2 bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden flex flex-col min-h-[600px]">
+          {/* 状态指示条 */}
+          <div className={`h-2 w-full transition-colors duration-500 ${priority === 'high' ? 'bg-orange-500' : 'bg-indigo-500'}`}></div>
+          
+          <div className="p-8 flex-1 flex flex-col space-y-6">
+            
+            {/* 1. 批次名称 */}
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">申报批次名称</label>
+              <input
+                type="text"
+                placeholder="例如：2025年度国家自然科学基金申报（计算机学院批次）"
+                className="text-2xl font-bold text-slate-800 placeholder-slate-300 border-b-2 border-slate-100 outline-none w-full bg-transparent py-2 focus:border-indigo-500 transition-colors"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </div>
+
+            {/* 2. 截止时间设置 (New) */}
+            <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+              <div className="p-2 bg-white rounded-lg text-indigo-600 shadow-sm">
+                <CalendarIcon className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-bold text-slate-500 mb-1">申报截止日期</label>
+                <input 
+                  type="date" 
+                  className="bg-transparent font-mono font-bold text-slate-700 outline-none w-full"
+                  value={deadline}
+                  onChange={(e) => setDeadline(e.target.value)}
+                />
+              </div>
+              <div className="text-xs text-slate-400 border-l pl-4 border-slate-200">
+                系统将在该日期后<br/>自动关闭申报入口
+              </div>
+            </div>
+
+            {/* 3. 详细要求 */}
+            <div className="flex-1 flex flex-col">
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">申报具体要求 / 通知正文</label>
+              <textarea
+                placeholder="在此填写申报资格、材料要求、格式规范等..."
+                className="flex-1 w-full resize-none border border-slate-200 rounded-xl p-4 outline-none text-base text-slate-600 leading-relaxed placeholder-slate-300 bg-slate-50/30 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all"
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+              ></textarea>
+            </div>
+          </div>
+        </div>
+
+        {/* === 右侧：权限与发布控制 === */}
+        <div className="space-y-6">
+          
+          {/* 1. 学院锁定展示 (安全隔离) */}
+          <div className="bg-slate-50 rounded-2xl border border-slate-200 p-6 shadow-inner">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center">
+              <Shield className="w-3 h-3 mr-1.5" /> 发布范围锁定
+            </h3>
+            
+            <div className="bg-white border border-indigo-100 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
+                <Building2 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs text-slate-400 mb-0.5">仅限本院教师可见</div>
+                <div className="text-sm font-bold text-slate-800">{currentAdmin.deptName}</div>
+                <div className="mt-2 flex items-center text-[10px] text-emerald-600 bg-emerald-50 px-2 py-1 rounded w-fit border border-emerald-100">
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                  权限校验通过
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. 优先级 (UI展示) */}
+          <div className={`rounded-2xl border p-6 shadow-sm transition-colors duration-300 ${priority === 'high' ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-200'}`}>
+            <h3 className={`text-sm font-bold uppercase tracking-wider mb-4 flex items-center ${priority === 'high' ? 'text-orange-700' : 'text-slate-900'}`}>
+              <AlertTriangle className={`w-4 h-4 mr-2 ${priority === 'high' ? 'text-orange-600' : 'text-slate-400'}`} /> 
+              重要程度
+            </h3>
+            <div className="flex bg-white/50 p-1 rounded-xl border border-slate-200/50">
+              <button onClick={() => setPriority('normal')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${priority === 'normal' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-400 hover:text-slate-600'}`}>普通批次</button>
+              <button onClick={() => setPriority('high')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center ${priority === 'high' ? 'bg-orange-500 text-white shadow-md shadow-orange-200' : 'text-slate-400 hover:text-orange-600'}`}>紧急通知</button>
+            </div>
+          </div>
+
+          {/* 3. 提交按钮 */}
+          <button
+            onClick={handlePublish}
+            disabled={isSending}
+            className={`w-full py-4 rounded-xl font-bold text-white shadow-xl flex items-center justify-center transition-all active:scale-95 duration-300 ${
+              isSending 
+                ? 'bg-slate-400 cursor-not-allowed' 
+                : 'bg-gradient-to-r from-indigo-600 to-blue-600 shadow-indigo-500/30 hover:shadow-indigo-500/50'
+            }`}
+          >
+            {isSending ? (
+              <>
+                <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+                正在创建批次...
+              </>
+            ) : (
+              <>
+                <Save className="w-5 h-5 mr-2" />
+                确认发布申报
+              </>
+            )}
+          </button>
+          <p className="text-center text-xs text-slate-400">
+            发布后将立即出现在本院教师的申报列表中。
+          </p>
+
+        </div>
+      </div>
+    </div>
+  );
+};
+
+```
+
+---
+
+### 🔗 2. 后端联动逻辑 (Server Logic)
+
+为了让上述前端按钮生效，并在教师端体现，后端需要执行以下逻辑：
+
+#### A. 数据库表结构确认 (`project_batches`)
+
+确保你的数据库有这张表，并且包含 `status` 和 `dept_id`。
+
+```sql
+CREATE TABLE project_batches (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,          -- 批次名称
+    description TEXT,                    -- 批次描述/要求
+    deadline DATETIME NOT NULL,          -- 截止时间
+    dept_id BIGINT NOT NULL,             -- 【核心】所属学院ID
+    publisher_id BIGINT NOT NULL,        -- 发布人ID
+    status INT DEFAULT 1,                -- 1: 开放, 0: 关闭
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+```
+
+#### B. 教师端获取批次的 API (`GET /api/batches/available`)
+
+当教师打开“项目申报”页面时，前端会自动请求这个接口。后端必须做以下处理：
+
+1. **获取当前用户身份**：解析 Token，拿到 `current_teacher_id` 和 `current_teacher_dept_id`（例如：计算机学院）。
+2. **执行查询**：
+```sql
+SELECT * FROM project_batches 
+WHERE status = 1 
+AND deadline > NOW() 
+AND dept_id = {current_teacher_dept_id}; -- 【关键】只查本学院
+
+```
+
+
+3. **返回数据**：前端 `ProjectApplyForm.tsx` 接收到数据后，渲染下拉框。
+
+---
+
+### 🔄 3. 教师端效果 (无需修改代码，逻辑说明)
+
+你在之前的 `ProjectApplyForm.tsx` 中已经写好了这段逻辑：
+
+```tsx
+// ProjectApplyForm.tsx 片段回顾
+useEffect(() => {
+  (async () => {
+    // ...
+    // 这里的 mockResponse 以后会变成真实的 API 请求
+    // 后端只会返回 dept_id 与当前教师匹配的数据
+    // 前端再次过滤只是双重保险
+    const myDeptPhases = mockResponse.filter(p => p.dept_id === currentTeacher.deptId);
+    setPhases(myDeptPhases);
+    // ...
+  })();
+}, []);
+
+```
+
+**一旦管理员在 `NoticePublisher` 点击“发布”：**
+
+1. 数据写入数据库 `project_batches`，`dept_id` 为计算机学院。
+2. 计算机学院的教师刷新申报页 -> `useEffect` 触发 -> 拉取到最新的一条批次 -> **下拉框自动出现该选项**。
+3. **其他学院（如文学院）的教师**刷新页面 -> `dept_id` 不匹配 -> 拉取不到该数据 -> 下拉框不会出现。
+
+---
+
+### ✅ 总结
+
+这次修改主要是在 **“管理员端”** 增加了一个**正规的表单**来生产数据。
+
+* **以前**：发布通知可能只是发个文本公告，不产生业务关联。
+* **现在**：发布的是一个 **Structued Object (结构化对象)**，它包含 `deadline` 和 `dept_id`，这正是系统能够自动控制“谁能申报”、“何时截止”的关键数据源。

@@ -1,13 +1,14 @@
-from typing import Any, List
+from typing import Any, List, Dict
+from datetime import date
+import datetime  # 引入完整 datetime 模块以防万一
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import date
+from sqlalchemy.future import select
 
 from app.crud import crud_user
 from app.models import User
 from app.schemas.user import UserCreate, UserUpdate, User as UserSchema
-from sqlalchemy.future import select
 from app.models.department import Department, DepartmentAlias
 from app.models.user_experience import UserExperience
 from app.schemas.experience import ExperienceCreate, Experience as ExperienceSchema
@@ -16,6 +17,28 @@ from app.api import deps
 
 router = APIRouter()
 
+def normalize_payload_keys(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    将前端的驼峰命名 (camelCase) 转换为后端的蛇形命名 (snake_case)。
+    """
+    mapping = {
+        "name": "full_name",
+        "fullName": "full_name",
+        "officeLocation": "office_location",
+        "almaMater": "alma_mater",
+        "highestEducation": "highest_education",
+        "advisorQualification": "advisor_qualification",
+        "researchDirection": "research_direction",
+        "employeeId": "employee_id",
+        "birthDate": "birth_date",
+        "departmentCode": "department_code",
+        "profilePublic": "profile_public",
+    }
+    out: Dict[str, Any] = {}
+    for k, v in (payload or {}).items():
+        nk = mapping.get(k, k)
+        out[nk] = v
+    return out
 
 @router.post("/", response_model=UserSchema)
 async def create_user(
@@ -44,25 +67,42 @@ async def read_user_me(current_user: User = Depends(deps.get_current_active_user
 async def update_user_me(
     *,
     db: AsyncSession = Depends(deps.get_db),
-    user_in: UserUpdate,
+    body: Dict[str, Any],
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Update current user's own profile."""
+    # Debug log
+    print(f"DEBUG: update_user_me received body: {body}")
+
     user = await crud_user.user.get(db, id=current_user.id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    update_data = user_in.model_dump(exclude_unset=True)
+    
+    update_data = normalize_payload_keys(body or {})
+    print(f"DEBUG: normalized data: {update_data}")
+
+    # 1. 处理日期格式
     if "birth_date" in update_data:
         v = update_data.get("birth_date")
         if v in (None, ""):
             update_data["birth_date"] = None
         elif isinstance(v, str):
-            update_data["birth_date"] = date.fromisoformat(v)
-    # Normalize department -> department_code if provided
-    if "department" in update_data and "department_code" not in update_data:
-        name = update_data.get("department") or ""
+            try:
+                update_data["birth_date"] = date.fromisoformat(v)
+            except ValueError:
+                pass 
+
+    # 2. 处理部门逻辑 (关键修复)
+    # 必须将 department 从 update_data 中移除，因为 User 模型可能没有这个字段，只有 department_code
+    dept_name_input = update_data.pop("department", None)
+
+    # 如果传了部门名称但没传 code，尝试查找 code
+    if dept_name_input and "department_code" not in update_data:
+        name = dept_name_input
         def norm(s: str) -> str:
             return (s or "").strip().lower().replace(" ", "")
+        
+        # 查找部门
         res = await db.execute(select(Department))
         rows = res.scalars().all()
         code = None
@@ -70,16 +110,28 @@ async def update_user_me(
             if norm(d.name) == norm(name):
                 code = d.code
                 break
+        
+        # 查找别名
         if not code:
             res2 = await db.execute(select(DepartmentAlias))
             for a in res2.scalars().all():
                 if norm(a.alias) == norm(name):
                     code = a.code
                     break
+        
         if code:
             update_data["department_code"] = code
-    user = await crud_user.user.update(db, db_obj=user, obj_in=update_data)
-    return user
+            print(f"DEBUG: Mapped department '{name}' to code '{code}'")
+        else:
+            print(f"DEBUG: Could not find code for department '{name}'")
+
+    # 3. 执行更新
+    try:
+        user = await crud_user.user.update(db, db_obj=user, obj_in=update_data)
+        return user
+    except Exception as e:
+        print(f"ERROR: Failed to update user: {e}")
+        raise HTTPException(status_code=500, detail=f"Update failed: {str(e)}")
 
 @router.get("/", response_model=List[UserSchema])
 async def read_users(
@@ -98,7 +150,7 @@ async def update_user(
     *, 
     db: AsyncSession = Depends(deps.get_db),
     user_id: int,
-    user_in: UserUpdate,
+    body: Dict[str, Any],
     current_user: User = Depends(deps.get_current_active_superuser),
 ) -> Any:
     """Update a user."""
@@ -108,18 +160,26 @@ async def update_user(
             status_code=404,
             detail="The user with this username does not exist in the system",
         )
-    update_data = user_in.model_dump(exclude_unset=True)
+    
+    update_data = normalize_payload_keys(body or {})
+    
     if "birth_date" in update_data:
         v = update_data.get("birth_date")
         if v in (None, ""):
             update_data["birth_date"] = None
         elif isinstance(v, str):
-            update_data["birth_date"] = date.fromisoformat(v)
-    if "department" in update_data and "department_code" not in update_data:
-        name = update_data.get("department") or ""
+            try:
+                update_data["birth_date"] = date.fromisoformat(v)
+            except ValueError:
+                pass
+
+    # 处理部门逻辑 (同 update_user_me)
+    dept_name_input = update_data.pop("department", None)
+    if dept_name_input and "department_code" not in update_data:
+        name = dept_name_input
         def norm(s: str) -> str:
             return (s or "").strip().lower().replace(" ", "")
-        # Try exact name
+        
         res = await db.execute(select(Department))
         rows = res.scalars().all()
         code = None
@@ -135,6 +195,7 @@ async def update_user(
                     break
         if code:
             update_data["department_code"] = code
+
     user = await crud_user.user.update(db, db_obj=user, obj_in=update_data)
     return user
 
@@ -168,8 +229,8 @@ async def create_my_experience(
     exp = UserExperience(
         user_id=current_user.id,
         type=body.type,
-        start_date=(None if not body.start_date else __import__('datetime').date.fromisoformat(body.start_date)),
-        end_date=(None if not body.end_date else __import__('datetime').date.fromisoformat(body.end_date)),
+        start_date=(None if not body.start_date else date.fromisoformat(body.start_date)),
+        end_date=(None if not body.end_date else date.fromisoformat(body.end_date)),
         title=body.title,
         institution=body.institution,
         description=body.description,
@@ -194,9 +255,9 @@ async def update_my_experience(
     if body.type is not None:
         exp.type = body.type
     if body.start_date is not None:
-        exp.start_date = (None if not body.start_date else __import__('datetime').date.fromisoformat(body.start_date))
+        exp.start_date = (None if not body.start_date else date.fromisoformat(body.start_date))
     if body.end_date is not None:
-        exp.end_date = (None if not body.end_date else __import__('datetime').date.fromisoformat(body.end_date))
+        exp.end_date = (None if not body.end_date else date.fromisoformat(body.end_date))
     exp.title = body.title
     exp.institution = body.institution
     exp.description = body.description
@@ -237,4 +298,3 @@ async def change_my_password(
     db.add(user)
     await db.commit()
     return {"status": "ok"}
-

@@ -240,7 +240,31 @@ export const usersAPI = {
     }),
   updateMe: (userData: any) => apiRequest<any>('/users/me', {
     method: 'PUT',
-    body: JSON.stringify(userData),
+    body: JSON.stringify({
+      // name mapping
+      full_name: userData.full_name ?? userData.fullName ?? userData.name,
+      // contact & profile
+      email: userData.email,
+      phone: userData.phone,
+      office_location: userData.office_location ?? userData.officeLocation,
+      // employment
+      employee_id: userData.employee_id ?? userData.employeeId,
+      gender: userData.gender,
+      birth_date: userData.birth_date ?? userData.birthDate,
+      // education
+      highest_education: userData.highest_education ?? userData.highestEducation,
+      degree: userData.degree,
+      alma_mater: userData.alma_mater ?? userData.almaMater,
+      major: userData.major,
+      advisor_qualification: userData.advisor_qualification ?? userData.advisorQualification,
+      // research
+      research_direction: userData.research_direction ?? userData.researchDirection,
+      // department
+      department: userData.department,
+      department_code: userData.department_code ?? userData.departmentCode,
+      // flags
+      profile_public: userData.profile_public ?? userData.profilePublic
+    }),
   }),
   getMyExperiences: () => apiRequest<any[]>('/users/me/experiences'),
   addMyExperience: (exp: any) => apiRequest<any>('/users/me/experiences', { method: 'POST', body: JSON.stringify(exp) }),
@@ -354,7 +378,51 @@ export const projectAPI = {
   getPhaseSubmissions: (phaseId: number) => apiRequest<any[]>(`/projects/phases/${phaseId}/submissions`),
   
   // Get latest submissions (admin-side real-time updates)
-  getLatestSubmissions: () => apiRequest<any[]>('/projects/submissions/latest')
+  getLatestSubmissions: () => apiRequest<any[]>('/projects/submissions/latest'),
+
+  // Save draft
+  saveDraft: (phaseId: number, content_json: any) =>
+    apiRequest<any>(`/projects/phases/${phaseId}/draft`, { method: 'POST', body: JSON.stringify({ content_json }) }),
+
+  // Create submission
+  submit: (phaseId: number, payload: { status?: string; file_url?: string; remarks?: string; content_json?: any }) =>
+    apiRequest<any>(`/projects/phases/${phaseId}/submissions`, { method: 'POST', body: JSON.stringify(payload) }),
+
+  // Upload attachment
+  uploadAttachment: async (submissionId: number, file: File) => {
+    const token = localStorage.getItem('token');
+    const url = `${API_BASE_URL}/projects/upload?submission_id=${submissionId}`;
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      } as any,
+      body: fd
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({} as any));
+      throw new Error(data.detail || 'Upload failed');
+    }
+    return await res.json();
+  }
+,
+  // Core project create/list per design document
+  createProject: (payload: { title: string; type: string; status?: number; content_json?: any }) =>
+    apiRequest<any>("/projects/create", { method: 'POST', body: JSON.stringify(payload) }),
+  listProjects: (params: { applicant_id?: number; keyword?: string; status?: number; page?: number; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params.applicant_id) query.set("applicant_id", String(params.applicant_id));
+    if (params.keyword) query.set("keyword", params.keyword);
+    if (typeof params.status === 'number') query.set("status", String(params.status));
+    if (params.page) query.set("page", String(params.page));
+    if (params.limit) query.set("limit", String(params.limit));
+    return apiRequest<any>("/projects/list" + (query.toString() ? `?${query.toString()}` : ""));
+  },
+  publishBatch: (data: { batch_name: string; start_time: string; end_time: string; visibility_scope?: number; requirements?: string }) =>
+    apiRequest<any>("/projects/batches", { method: 'POST', body: JSON.stringify(data) }),
+  getAvailableBatches: () => apiRequest<any[]>("/projects/batches/available")
 };
 
 // Health check
