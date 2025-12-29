@@ -2,6 +2,7 @@ from typing import List, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 from app.api import deps
 from app.models.rbac import Role, RolePermission
 from app.models.permission_catalog import PermissionCatalog
@@ -74,7 +75,7 @@ async def list_roles(
     db: AsyncSession = Depends(deps.get_db),
     current_user = Depends(deps.get_current_active_user),
 ) -> Any:
-    res = await db.execute(select(Role))
+    res = await db.execute(select(Role).options(selectinload(Role.permissions)))
     roles = res.scalars().all()
     out = []
     for r in roles:
@@ -111,8 +112,10 @@ async def update_role(
         r.description = body.description
     db.add(r)
     await db.commit()
-    await db.refresh(r)
-    codes = [p.code for p in r.permissions]
+    # reload with permissions eagerly
+    res2 = await db.execute(select(Role).options(selectinload(Role.permissions)).where(Role.id == r.id))
+    r2 = res2.scalars().first()
+    codes = [p.code for p in (r2.permissions if r2 else [])]
     return RoleResponse(id=r.id, name=r.name, description=r.description, is_system=r.is_system, created_at=r.created_at, permissions=codes)
 
 @router.delete("/roles/{role_id}")
@@ -149,6 +152,7 @@ async def save_role_permissions(
     new_perms = [RolePermission(role_id=role_id, code=c) for c in set(body.codes or [])]
     db.add_all(new_perms)
     await db.commit()
-    await db.refresh(r)
-    codes = [p.code for p in r.permissions]
+    res2 = await db.execute(select(Role).options(selectinload(Role.permissions)).where(Role.id == role_id))
+    r2 = res2.scalars().first()
+    codes = [p.code for p in (r2.permissions if r2 else [])]
     return RoleResponse(id=r.id, name=r.name, description=r.description, is_system=r.is_system, created_at=r.created_at, permissions=codes)

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Calendar, X, ChevronDown, SlidersHorizontal } from 'lucide-react';
+import { researchAPI } from '../logic/api';
 
 export interface Filters {
   status: 'all' | 'pending' | 'approved' | 'rejected' | 'draft';
@@ -31,6 +32,38 @@ const FilterBar: React.FC<Props> = ({ value, onChange }) => {
     { value: 'rejected', label: '已驳回', color: 'text-red-600 bg-red-50' },
     { value: 'draft', label: '草稿', color: 'text-slate-600 bg-slate-50' },
   ];
+
+  const [subtypeOptions, setSubtypeOptions] = useState<Array<{id:number;name:string}>>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const subs = await researchAPI.listSubtypes();
+        const list = Array.isArray(subs) ? subs
+          .map((s: any) => ({ id: Number(s.id), name: String(s.name || '') }))
+          .filter(s => !!s.name)
+          : [];
+        // 去重（按 id）
+        const uniq: Array<{id:number;name:string}> = [];
+        const seen = new Set<number>();
+        for (const s of list) {
+          if (!seen.has(s.id)) { seen.add(s.id); uniq.push(s); }
+        }
+        setSubtypeOptions(uniq);
+      } catch {
+        setSubtypeOptions([]);
+      }
+    })();
+  }, []);
+
+  const mapToCategory = (name: string) => {
+    if (name.includes('纵向')) return '纵向项目';
+    if (name.includes('横向')) return '横向项目';
+    if (name.includes('论文')) return '学术论文';
+    if (name.includes('出版') || name.includes('著作') || name.includes('书')) return '出版著作';
+    if (name.includes('专利') || name.includes('发明')) return '专利';
+    if (name.includes('奖励') || name.includes('获奖')) return '科技奖励';
+    return 'all';
+  };
 
   return (
     <div className="w-full mb-8">
@@ -67,16 +100,17 @@ const FilterBar: React.FC<Props> = ({ value, onChange }) => {
             className="bg-transparent text-sm font-medium text-slate-700 outline-none cursor-pointer hover:text-indigo-600 appearance-none pr-6"
             value={local.category}
             onChange={e => {
-                const newVal = { ...local, category: e.target.value as any };
+                const v = e.target.value;
+                const cat = v === 'all' ? 'all' : mapToCategory(v);
+                const newVal = { ...local, category: cat as any };
                 setLocal(newVal);
                 onChange(newVal);
             }}
           >
             <option value="all">全部分类</option>
-            <option value="纵向项目">纵向项目</option>
-            <option value="横向项目">横向项目</option>
-            <option value="学术论文">学术论文</option>
-            <option value="专利">专利成果</option>
+            {subtypeOptions.map(t => (
+              <option key={t.id} value={t.name}>{t.name}</option>
+            ))}
           </select>
           <ChevronDown className="w-3 h-3 text-slate-400 absolute right-0 pointer-events-none" />
         </div>

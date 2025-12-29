@@ -21,6 +21,7 @@ export default function UsersContainer({
   const [editUserDept, setEditUserDept] = useState<string>('');
   const [editUserRole, setEditUserRole] = useState<Role>('teacher');
   const [q, setQ] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'teacher' | 'research_admin' | 'sys_admin'>('all');
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -34,6 +35,28 @@ export default function UsersContainer({
             onChange={(e) => setQ(e.target.value)}
             className="block w-full h-10 pl-9 pr-4 rounded-lg bg-white border border-gray-300 text-gray-900 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 focus:outline-none transition-all text-sm"
           />
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex bg-white rounded-lg border border-gray-300 p-1">
+            {[
+              { id: 'all', label: '全部' },
+              { id: 'sys_admin', label: '系统' },
+              { id: 'research_admin', label: '科研' },
+              { id: 'teacher', label: '教师' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setRoleFilter(tab.id as any)}
+                className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+                  roleFilter === tab.id 
+                    ? 'bg-slate-800 text-white shadow' 
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
         {currentUser?.role === 'sys_admin' && (
           <>
@@ -83,7 +106,11 @@ export default function UsersContainer({
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
           {users
-            .filter((u) => !q || u.name?.includes(q) || u.email?.includes(q))
+            .filter((u) => {
+              const byText = !q || u.name?.includes(q) || u.email?.includes(q);
+              const byRole = roleFilter === 'all' || u.role === roleFilter;
+              return byText && byRole;
+            })
             .map((u) => (
               <tr key={u.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{u.name}</td>
@@ -109,6 +136,36 @@ export default function UsersContainer({
                         className="text-indigo-600 hover:text-indigo-900"
                       >
                         编辑
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const np = window.prompt('请输入新的初始密码（至少6位）：', '');
+                          if (!np) return;
+                          try {
+                            await usersAPI.changePassword(String(u.id), np);
+                            toast.success('已重置密码');
+                          } catch (e:any) {
+                            toast.error(e.message || '重置失败');
+                          }
+                        }}
+                        className="text-orange-600 hover:text-orange-900 ml-3"
+                      >
+                        重置密码
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            await usersAPI.update(String(u.id), { is_active: !(u as any).is_active });
+                            const usersList = await usersAPI.getAll();
+                            onUsersRefresh(usersList);
+                            toast.success((u as any).is_active ? '已锁定用户' : '已启用用户');
+                          } catch (e:any) {
+                            toast.error(e.message || '操作失败');
+                          }
+                        }}
+                        className="text-slate-600 hover:text-slate-900 ml-3"
+                      >
+                        { (u as any).is_active ? '锁定' : '启用' }
                       </button>
                       <button
                         onClick={async () => {
@@ -201,4 +258,3 @@ export default function UsersContainer({
     </div>
   );
 }
-

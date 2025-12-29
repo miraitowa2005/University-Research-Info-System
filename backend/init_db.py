@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from app.db.session import AsyncSessionLocal as async_session
 from app.db.base import Base
 from app.models.user import User
-from app.models.research_type import ResearchType, ResearchSubtype
+from app.models.research_type import ResearchSubtype
 from app.models.research_item import ResearchItem
 from app.models.research_collaborator import ResearchCollaborator
 from app.models.audit_log import AuditLog
@@ -60,21 +60,14 @@ async def seed_sample_data():
     async with async_session() as session:
         try:
             # 创建研究类型
-            research_types = [
-                ResearchType(name="基础研究", description="探索自然规律的基础性研究"),
-                ResearchType(name="应用研究", description="解决实际问题的应用研究"),
-                ResearchType(name="技术开发", description="新技术、新产品的开发"),
-                ResearchType(name="软科学研究", description="管理、政策等软科学研究")
-            ]
-            session.add_all(research_types)
-            await session.flush()
-            
-            # 创建研究子类型
+            # 创建研究子类型（无上级类型）
             research_subtypes = [
-                ResearchSubtype(name="理论研究", type_id=research_types[0].id),
-                ResearchSubtype(name="实验研究", type_id=research_types[0].id),
-                ResearchSubtype(name="技术应用", type_id=research_types[1].id),
-                ResearchSubtype(name="产品开发", type_id=research_types[2].id)
+                ResearchSubtype(name="纵向科研项目"),
+                ResearchSubtype(name="横向科研项目"),
+                ResearchSubtype(name="科研论文"),
+                ResearchSubtype(name="专著/著作"),
+                ResearchSubtype(name="专利成果"),
+                ResearchSubtype(name="科研获奖"),
             ]
             session.add_all(research_subtypes)
             await session.flush()
@@ -108,14 +101,14 @@ async def seed_sample_data():
                 ResearchItem(
                     title="人工智能在医学影像诊断中的应用",
                     content_json={"description": "研究利用深度学习技术辅助医学影像诊断"},
-                    subtype_id=research_subtypes[0].id,  # 使用理论研究子类型
+                    subtype_id=research_subtypes[0].id,
                     user_id=users[1].id,
                     status="pending"
                 ),
                 ResearchItem(
                     title="新能源材料的合成与性能研究",
                     content_json={"description": "研究新型能源材料的合成方法及其性能"},
-                    subtype_id=research_subtypes[1].id,  # 使用实验研究子类型
+                    subtype_id=research_subtypes[2].id,
                     user_id=users[2].id,
                     status="approved"
                 )

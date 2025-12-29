@@ -13,9 +13,15 @@ from app.core.config import settings
 config = context.config
 
 # Set the database URL from the loaded settings, but make it sync for Alembic
-db_url = settings.DATABASE_URL
-if db_url and "asyncmy" in db_url:
-    db_url = db_url.replace("+asyncmy", "+pymysql")
+# Properly encode the password for the database URL
+from urllib.parse import quote_plus
+
+# Encode the password to handle special characters
+encoded_pass = quote_plus(settings.DB_PASS)
+db_url = f"mysql+pymysql://{settings.DB_USER}:{encoded_pass}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+
+# Escape % characters to avoid interpolation issues
+db_url = db_url.replace('%', '%%')
 
 if db_url:
     config.set_main_option('sqlalchemy.url', db_url)
@@ -29,10 +35,16 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 from app.db.base import Base
 from app.models.user import User
-from app.models.research_type import ResearchType, ResearchSubtype
+from app.models.research_type import ResearchSubtype
 from app.models.research_item import ResearchItem
 from app.models.research_collaborator import ResearchCollaborator
 from app.models.audit_log import AuditLog
+from app.models.research_extensions import VerticalProject, HorizontalProject, AcademicPaper, Patent, AcademicBook, Award
+from app.models.notice import Notice
+from app.models.notice_recipient import NoticeRecipient
+from app.models.permission_catalog import PermissionCatalog
+from app.models.rbac import Role, RolePermission
+from app.models.user_experience import UserExperience
 
 target_metadata = Base.metadata
 

@@ -66,7 +66,6 @@ export default function PublishContainer({
             const content = (document.getElementById('notice_content') as HTMLTextAreaElement)?.value || '';
             const role = (document.getElementById('notice_role') as HTMLSelectElement)?.value || 'teacher';
             const deptCode = (document.getElementById('notice_dept_code') as HTMLSelectElement)?.value || '';
-            const dept = deptCode ? deptList.find((d: any) => d.code === deptCode)?.name || undefined : undefined;
             if (!title || !content) {
               toast.error('请填写标题与内容');
               return;
@@ -76,7 +75,6 @@ export default function PublishContainer({
                 title,
                 content,
                 target_role: role,
-                target_department: dept,
                 target_department_code: deptCode || undefined,
                 publisher: currentUser?.name,
               } as any);
@@ -93,4 +91,3 @@ export default function PublishContainer({
     </div>
   );
 }
-

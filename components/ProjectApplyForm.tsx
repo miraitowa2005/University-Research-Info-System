@@ -4,17 +4,18 @@ import {
   ArrowLeft, ArrowRight, Save, Calendar, Plus, Trash2, X, Paperclip, File,
   Briefcase, BookOpen, Award, PenTool
 } from 'lucide-react';
-import { projectAPI } from '../logic/api';
+import { projectAPI, researchAPI } from '../logic/api';
+import { toast } from 'react-toastify';
 
 // --- DEFINITIONS: Project Types & Steps ---
-const PROJECT_TYPES = [
-  { id: 'vertical', label: '纵向科研项目', icon: FileText },
-  { id: 'horizontal', label: '横向科研项目', icon: Briefcase },
-  { id: 'paper', label: '科研论文', icon: BookOpen },
-  { id: 'book', label: '专著/著作', icon: PenTool },
-  { id: 'patent', label: '专利成果', icon: File },
-  { id: 'award', label: '科研获奖', icon: Award },
-];
+const LABEL_ICON: Record<string, any> = {
+  '纵向科研项目': FileText,
+  '横向科研项目': Briefcase,
+  '科研论文': BookOpen,
+  '专著/著作': PenTool,
+  '专利成果': File,
+  '科研获奖': Award,
+};
 
 const STEPS = [
   { id: 1, title: '基本信息', icon: FileText, desc: '类别与核心元数据' },
@@ -25,6 +26,8 @@ const STEPS = [
 
 export default function ProjectApplyForm() {
   const [currentStep, setCurrentStep] = useState(1);
+  const [availableSubtypes, setAvailableSubtypes] = useState<Array<{id:number; name:string}>>([]);
+  const [submitting, setSubmitting] = useState(false);
   
   // --- 1. Basic Info State ---
   const [basicInfo, setBasicInfo] = useState({
@@ -42,7 +45,7 @@ export default function ProjectApplyForm() {
 
   // --- 3. Team State ---
   const [members, setMembers] = useState([
-    { id: 1, name: '张三', role: '负责人/第一作者', unit: '计算机学院', task: '统筹规划' }
+    { id: 1, name: '柴泽同', role: '负责人/第一作者', unit: '计算机学院', task: '统筹规划' }
   ]);
   const [newMember, setNewMember] = useState({ name: '', role: '参与人', unit: '', task: '' });
   const [isAddingMember, setIsAddingMember] = useState(false);
@@ -59,23 +62,53 @@ export default function ProjectApplyForm() {
     (async () => {
       try {
         const batches = await projectAPI.getAvailableBatches();
-        const ps = (batches || []).map((b: any) => ({ id: b.batch_id, name: b.batch_name, deadline: b.end_time, notice_id: 0 }));
+        const ps = (batches || []).map((b: any) => ({ id: b.batch_id, name: b.batch_name, deadline: '', notice_id: b.notice_id }));
         setPhases(ps);
-        const upcoming = (ps || []).sort((a:any,b:any)=>new Date(a.deadline).getTime()-new Date(b.deadline).getTime())[0];
-        setSelectedPhaseId(upcoming ? upcoming.id : ((ps||[])[0]?.id ?? null));
+        setSelectedPhaseId((ps||[])[0]?.id ?? null);
       } catch (_) {}
+    })();
+  }, []);
+  useEffect(() => {
+    (async () => {
+      try {
+        const subs = await researchAPI.listSubtypes();
+        const list = (subs || []).map((s: any) => ({ id: s.id, name: s.name }));
+        setAvailableSubtypes(list);
+        if (list.length && !list.find(x => x.name === basicInfo.projectType)) {
+          const first = list[0];
+          const nm = first.name;
+          const toId = (n: string) => {
+            if (n.includes('纵向')) return 'vertical';
+            if (n.includes('横向')) return 'horizontal';
+            if (n.includes('论文')) return 'paper';
+            if (n.includes('专著') || n.includes('出版') || n.includes('书')) return 'book';
+            if (n.includes('专利') || n.includes('发明')) return 'patent';
+            if (n.includes('获奖') || n.includes('奖励')) return 'award';
+            return 'vertical';
+          };
+          setBasicInfo({ ...basicInfo, projectType: nm, projectTypeId: toId(nm) });
+        }
+      } catch {}
     })();
   }, []);
 
   // --- Helpers ---
   const handleTypeChange = (label: string) => {
-    const typeObj = PROJECT_TYPES.find(t => t.label === label);
+    const toId = (n: string) => {
+      if (n.includes('纵向')) return 'vertical';
+      if (n.includes('横向')) return 'horizontal';
+      if (n.includes('论文')) return 'paper';
+      if (n.includes('专著') || n.includes('出版') || n.includes('书')) return 'book';
+      if (n.includes('专利') || n.includes('发明')) return 'patent';
+      if (n.includes('获奖') || n.includes('奖励')) return 'award';
+      return 'vertical';
+    };
     setBasicInfo({ 
       ...basicInfo, 
       projectType: label,
-      projectTypeId: typeObj ? typeObj.id : 'vertical'
+      projectTypeId: toId(label)
     });
-    setCategoryData({}); // Reset category data on type change
+    setCategoryData({});
   };
 
   const addMember = () => {
@@ -337,7 +370,14 @@ export default function ProjectApplyForm() {
                 <div>
                   <label className={labelClass}>申报批次 <span className="text-red-500">*</span></label>
                   <div className="relative">
-                    <select className={`${inputClass} appearance-none`} value={selectedPhaseId ?? ''} onChange={e => setSelectedPhaseId(Number(e.target.value))}>
+                    <select
+                      className={`${inputClass} appearance-none`}
+                      value={selectedPhaseId == null ? '' : String(selectedPhaseId)}
+                      onChange={e => {
+                        const v = e.target.value;
+                        setSelectedPhaseId(v ? Number(v) : null);
+                      }}
+                    >
                       <option value="">-- 请选择当前开放的批次 --</option>
                       {phases.map(p => (
                         <option key={p.id} value={p.id}>{p.name} (截止: {p.deadline})</option>
@@ -352,7 +392,7 @@ export default function ProjectApplyForm() {
                   <label className={labelClass}>成果/项目类别 <span className="text-red-500">*</span></label>
                   <div className="relative">
                     <select className={`${inputClass} appearance-none`} value={basicInfo.projectType} onChange={e => handleTypeChange(e.target.value)}>
-                      {PROJECT_TYPES.map(t => <option key={t.id} value={t.label}>{t.label}</option>)}
+                      {availableSubtypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
                     </select>
                     <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none rotate-90" />
                   </div>
@@ -490,21 +530,99 @@ export default function ProjectApplyForm() {
             </button>
             <button onClick={async () => {
                 if (currentStep !== STEPS.length) { nextStep(); return; }
+                if (submitting) return;
+                setSubmitting(true);
                 // Submit Logic
                 if (!basicInfo.projectName) { alert('请输入名称'); return; }
                 try {
-                  const payload = {
-                    ...basicInfo,
-                    categoryDetails: categoryData,
-                    members,
-                    files
+                  const subtypes = await researchAPI.listSubtypes();
+                  const pickId = (label: string) => {
+                    const map: Record<string, (n: string) => boolean> = {
+                      '纵向科研项目': (n) => n.includes('纵向'),
+                      '横向科研项目': (n) => n.includes('横向'),
+                      '科研论文': (n) => n.includes('论文'),
+                      '专著/著作': (n) => n.includes('著作') || n.includes('出版') || n.includes('书'),
+                      '专利成果': (n) => n.includes('专利') || n.includes('发明'),
+                      '科研获奖': (n) => n.includes('获奖') || n.includes('奖励'),
+                    };
+                    const fn = map[label] || (() => false);
+                    const found = (subtypes || []).find((s: any) => fn(String(s.name || '')));
+                    return found?.id;
                   };
-                  console.log("Submitting:", payload); // Debug
-                  // await projectAPI.submit(...)
-                  alert('申报提交成功！');
-                } catch(e) { alert('提交失败'); }
+                  let subtypeId = pickId(basicInfo.projectType);
+                  if (!subtypeId) {
+                    subtypeId = (subtypes && subtypes[0]?.id) || undefined;
+                  }
+                  if (!subtypeId) { toast.error('系统未配置任何子类型'); return; }
+                  const membersList = (members || []).map(m => m.name).filter(Boolean);
+                  const buildContent = () => {
+                    switch (basicInfo.projectTypeId) {
+                      case 'vertical':
+                        return {
+                          project_source: categoryData.source || '',
+                          approval_number: categoryData.project_no || '',
+                          total_funding: categoryData.funding ? Number(categoryData.funding) : null,
+                          project_level: categoryData.level || '',
+                          start_date: basicInfo.startDate || null,
+                          end_date: basicInfo.endDate || null,
+                        };
+                      case 'horizontal':
+                        return {
+                          partner_name: categoryData.partner_unit || '',
+                          contract_number: categoryData.contract_no || '',
+                          total_funding: categoryData.contract_amount ? Number(categoryData.contract_amount) : null,
+                          start_date: categoryData.sign_date || basicInfo.startDate || null,
+                          end_date: basicInfo.endDate || null,
+                        };
+                      case 'paper':
+                        return {
+                          journal_name: categoryData.journal || '',
+                          impact_factor: categoryData.impact_factor ? Number(categoryData.impact_factor) : null,
+                          publish_date: categoryData.publish_date || basicInfo.startDate || null,
+                          volume_issue: categoryData.vol_issue_page || '',
+                          is_sci: String(categoryData.index_type || '').toUpperCase().includes('SCI'),
+                        };
+                      case 'patent':
+                        return {
+                          patent_number: categoryData.patent_no || '',
+                          grant_date: categoryData.approve_date || null,
+                          inventor: membersList[0] || '',
+                          patent_type: categoryData.patent_type || '',
+                          assignee: '',
+                        };
+                      case 'book':
+                        return {
+                          publisher: categoryData.publisher || '',
+                          isbn: categoryData.isbn || '',
+                          publish_date: basicInfo.startDate || null,
+                          pages: categoryData.word_count ? Number(categoryData.word_count) : null,
+                        };
+                      case 'award':
+                        return {
+                          awarding_body: categoryData.grant_body || '',
+                          award_level: categoryData.award_level || '',
+                          award_year: basicInfo.startDate ? Number(String(basicInfo.startDate).slice(0,4)) : null,
+                          certificate_no: categoryData.cert_no || '',
+                        };
+                      default:
+                        return {};
+                    }
+                  };
+                  const contentJson = buildContent();
+                  await researchAPI.create({
+                    title: basicInfo.projectName,
+                    subtype_id: subtypeId,
+                    content_json: contentJson,
+                    status: 'pending',
+                    file_url: undefined,
+                    teamMembers: membersList
+                  });
+                  toast.success('申报提交成功！');
+                } catch(e: any) { toast.error(e?.message || '提交失败'); }
+                finally { setSubmitting(false); }
               }} 
-              className="flex items-center px-8 py-2.5 rounded-xl font-bold bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 hover:-translate-y-0.5 active:scale-95 transition-all">
+              disabled={submitting}
+              className={`flex items-center px-8 py-2.5 rounded-xl font-bold transition-all ${submitting ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-indigo-600 text白 shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 hover:-translate-y-0.5 active:scale-95'}`}>
               {currentStep === STEPS.length ? '提交申请' : '下一步'}
               {currentStep !== STEPS.length && <ArrowRight className="w-4 h-4 ml-2" />}
             </button>

@@ -42,7 +42,9 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
   const url = `${API_BASE_URL}${endpoint}`;
   
   let attempt = 0;
-  const maxAttempts = 5;
+  const method = String(options.method || 'GET').toUpperCase();
+  const isWrite = method !== 'GET';
+  const maxAttempts = isWrite ? 1 : 5;
   const baseDelay = 1000;
 
   while (attempt < maxAttempts) {
@@ -54,10 +56,7 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
       });
 
       if (!response.ok) {
-        // Auto-recover: clear invalid token on 401/403 to avoid stuck state
-        if (response.status === 401 || response.status === 403) {
-          try { localStorage.removeItem('token'); } catch (_) {}
-        }
+        // 保留 token，避免短暂 401/403 导致后续请求全部未授权
         const errorData = await response.json().catch(() => ({} as any));
         const message =
           (errorData && (errorData.message || errorData.detail || errorData.error)) ||
@@ -89,7 +88,7 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
         throw error;
       }
       
-      if (isNetworkError) {
+      if (isNetworkError && !isWrite) {
         // Exponential backoff for network issues: 1s, 2s, 4s, 8s
         const delay = baseDelay * Math.pow(2, attempt);
         console.warn(`Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
@@ -114,6 +113,8 @@ function normalizeUser(raw: any): any {
   const isSuperuser = Boolean(raw.isSuperuser ?? raw.is_superuser ?? raw.is_super_user ?? raw.isAdmin ?? false);
   let role = raw.role || (isSuperuser ? 'sys_admin' : 'teacher');
   const department = raw.department || raw.dept || raw.deptName || raw.dept_name || raw.department_name;
+  const dept_id = raw.dept_id != null ? Number(raw.dept_id) : undefined;
+  const department_code = raw.department_code || raw.dept_code || raw.deptCode;
   const tags = raw.tags;
 
   return {
@@ -123,6 +124,8 @@ function normalizeUser(raw: any): any {
     email,
     role,
     ...(department ? { department } : {}),
+    ...(dept_id != null ? { dept_id } : {}),
+    ...(department_code ? { department_code } : {}),
     ...(Array.isArray(tags) ? { tags } : {}),
   };
 }
@@ -233,6 +236,10 @@ export const usersAPI = {
   delete: (id: string) => apiRequest<any>(`/users/${id}`, {
     method: 'DELETE',
   }),
+  changePassword: (id: string, newPassword: string) => apiRequest<any>(`/users/${id}/password`, {
+    method: 'PUT',
+    body: JSON.stringify({ new_password: newPassword })
+  }),
   updateTags: (id: string, tags: string[]) => 
     apiRequest<any>(`/users/${id}/tags`, {
       method: 'PUT',
@@ -262,6 +269,7 @@ export const usersAPI = {
       // department
       department: userData.department,
       department_code: userData.department_code ?? userData.departmentCode,
+      dept_id: userData.dept_id,
       // flags
       profile_public: userData.profile_public ?? userData.profilePublic
     }),
@@ -285,6 +293,53 @@ export const researchAPI = {
   getPending: () => apiRequest<any[]>("/research/pending").then(arr => Array.isArray(arr) ? arr.map(it => normalizeResearchItem(it)) : []),
   
   listSubtypes: () => apiRequest<any[]>("/research/subtypes"),
+  
+  export: async (types: string[], format: 'csv'|'json'|'pdf') => {
+    const token = localStorage.getItem('token');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE_URL}/research/export`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ types, format }),
+    });
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({} as any));
+      const message = (errorData && (errorData.message || errorData.detail || errorData.error)) || `导出失败 (${res.status})`;
+      throw new Error(message);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('content-disposition') || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const filename = m ? m[1] : `research_export_${Date.now()}.zip`;
+    return { blob, filename, size: blob.size };
+  },
+  exportCV: async (types: string[]) => {
+    const token = localStorage.getItem('token');
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE_URL}/research/export-cv`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ types }),
+    });
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({} as any));
+      const message = (errorData && (errorData.message || errorData.detail || errorData.error)) || `导出失败 (${res.status})`;
+      throw new Error(message);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('content-disposition') || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const filename = m ? m[1] : `CV_${Date.now()}.docx`;
+    return { blob, filename, size: blob.size };
+  },
+  fundingByDept: async (deptId: number) => {
+    const res = await apiRequest<any>(`/research/funding/dept/${deptId}`);
+    return Number(res?.total_funding || 0);
+  },
   
   create: (researchData: any) => 
     apiRequest<any>("/research", {
@@ -336,10 +391,15 @@ export const logsAPI = {
 // Notices API
 export const noticeAPI = {
   list: () => apiRequest<any[]>("/notices/"),
-  create: (data: { title: string; content: string; target_role: string; target_department?: string; target_department_code?: string; publisher?: string }) =>
+  create: (data: { title: string; content: string; target_role: string; target_department_code?: string; publisher?: string }) =>
     apiRequest<any>("/notices/", { method: 'POST', body: JSON.stringify(data) }),
   my: () => apiRequest<any[]>("/notices/mine"),
   markRead: (id: string | number) => apiRequest<any>(`/notices/${id}/read`, { method: 'PUT' }),
+  unreadCount: async () => {
+    const r = await apiRequest<any>("/notices/unread-count");
+    return Number(r?.count || 0);
+  },
+  deleteMine: (id: number) => apiRequest<any>(`/notices/${id}/mine`, { method: 'DELETE' }),
 };
 
 export const departmentAPI = {
@@ -425,6 +485,14 @@ export const projectAPI = {
   getAvailableBatches: () => apiRequest<any[]>("/projects/batches/available")
 };
 
+export const reportsAPI = {
+  yearend: (year: number, deptId?: number) => {
+    const qs = new URLSearchParams();
+    qs.set('year', String(year));
+    if (deptId != null) qs.set('dept_id', String(deptId));
+    return apiRequest<any>(`/research/reports/yearend?${qs.toString()}`);
+  }
+};
 // Health check
 export const healthAPI = {
   check: () => apiRequest<any>("/admin/health")

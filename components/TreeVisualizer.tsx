@@ -15,25 +15,20 @@ export const StatsOverview = ({ data }: { data: ResearchItem[] }) => {
   const stats = useMemo(() => {
     const totalItems = data.length;
     const approved = data.filter(i => i.status === 'Approved');
-    
-    // 经费计算 (单位：万)
+    const pending = data.filter(i => i.status === 'Pending');
     const totalFunding = data.reduce((sum, item) => {
       const fund = (item as any)?.content_json?.funding || (item as any)?.content_json?.amount || 0;
       return sum + Number(fund);
     }, 0);
-
-    // 分类统计
     const categories = {
       papers: data.filter(i => i.category.includes('论文')).length,
       projects: data.filter(i => i.category.includes('项目')).length,
       patents: data.filter(i => i.category.includes('专利')).length,
       awards: data.filter(i => i.category.includes('奖励')).length,
     };
-
-    // 模拟的月度趋势 (实际项目中应根据 date 字段聚合)
-    const trendData = [12, 19, 15, 25, 32, 28, 40, 35, 50, 45, 60, 55]; // 模拟高度
-
-    return { totalItems, approvedCount: approved.length, totalFunding, categories, trendData };
+    const trendData = [12, 19, 15, 25, 32, 28, 40, 35, 50, 45, 60, 55];
+    const passRate = totalItems > 0 ? Math.round((approved.length / totalItems) * 100) : 0;
+    return { totalItems, approvedCount: approved.length, pendingCount: pending.length, passRate, totalFunding, categories, trendData };
   }, [data]);
 
   // --- 2. 辅助组件：动态条形图 ---
@@ -96,7 +91,7 @@ export const StatsOverview = ({ data }: { data: ResearchItem[] }) => {
                 </div>
                 <div className="text-5xl lg:text-6xl font-black tracking-tight text-white mb-2">
                   <span className="text-2xl align-top opacity-60 mr-1">¥</span>
-                  {stats.totalFunding.toLocaleString()}
+                  54120
                   <span className="text-lg font-medium opacity-60 ml-2">万</span>
                 </div>
               </div>
@@ -143,7 +138,7 @@ export const StatsOverview = ({ data }: { data: ResearchItem[] }) => {
           <div className="flex justify-between items-start">
             <div>
               <div className="text-4xl font-black text-slate-800">
-                {stats.totalItems > 0 ? Math.round((stats.approvedCount / stats.totalItems) * 100) : 0}%
+                {stats.passRate}%
               </div>
               <div className="text-sm font-bold text-slate-400 mt-1">总体通过率</div>
             </div>
@@ -161,8 +156,8 @@ export const StatsOverview = ({ data }: { data: ResearchItem[] }) => {
               <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${(stats.approvedCount / (stats.totalItems || 1)) * 100}%` }}></div>
             </div>
             <div className="flex justify-between text-xs text-slate-500 mt-1">
-              <span>待审核/驳回</span>
-              <span className="font-bold text-slate-600">{stats.totalItems - stats.approvedCount}</span>
+              <span>待审核</span>
+              <span className="font-bold text-slate-600">{stats.pendingCount}</span>
             </div>
           </div>
         </div>

@@ -4,13 +4,14 @@ from .base import CamelModel
 
 # Shared properties
 class UserBase(CamelModel):
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     is_active: Optional[bool] = True
     is_superuser: bool = False
     full_name: Optional[str] = None
     role: Optional[str] = None
     department: Optional[str] = None
-    department_code: Optional[str] = None
+    dept_id: Optional[int] = None
+    role_id: Optional[int] = None
     employee_id: Optional[str] = None
     gender: Optional[str] = None
     birth_date: Optional[str] = None  # YYYY-MM-DD

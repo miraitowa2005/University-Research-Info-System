@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.sql import func
 from app.db.base import Base
 
@@ -9,7 +9,6 @@ class Notice(Base):
     title = Column(String(255), nullable=False)
     content = Column(String(2000), nullable=False)
     target_role = Column(String(50), nullable=False)  # teacher | research_admin | sys_admin | all
-    target_department = Column(String(255), nullable=True)
-    target_department_code = Column(String(50), nullable=True)
+    target_dept_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     publisher = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

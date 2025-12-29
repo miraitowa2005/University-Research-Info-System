@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import IMEInput from './ui/IMEInput';
 import { User, ResearchItem } from '../types';
 import { usersAPI, departmentAPI } from '../logic/api';
@@ -7,7 +7,7 @@ import {
   User as UserIcon, Mail, Phone, MapPin, Briefcase, GraduationCap, 
   Lock, Save, Plus, Trash2, Calendar, Shield, Layout,
   Award, BookOpen, Layers, Edit3, Camera, Eye, Settings, ChevronRight,
-  Globe, Link as LinkIcon, CheckCircle2
+  Globe, Link as LinkIcon, CheckCircle2, RefreshCw
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -27,10 +27,13 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
   const [settingTab, setSettingTab] = useState<'basic' | 'academic' | 'experience' | 'security'>('basic');
   
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [profileForm, setProfileForm] = useState<Partial<User>>({});
   const [pwdForm, setPwdForm] = useState({ old: '', new: '' });
   const [experiences, setExperiences] = useState<any[]>([]);
   const [departments, setDepartments] = useState<Array<{ code: string; name: string }>>([]);
+  const [deptName, setDeptName] = useState<string>('未分配院系');
+  const lastDeptIdRef = useRef<number | null>(null);
   
   // 经历编辑状态
   const [isAddingExp, setIsAddingExp] = useState(false);
@@ -43,56 +46,174 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
     description: ''
   });
 
+  // 使用 ref 来跟踪是否已经加载过数据
+  const hasLoadedRef = useRef(false);
+  // 针对不同用户的本地缓存键，避免后端未返回字段导致清空
+  const profileCacheKey = user ? `profile_form_${user.id}` : null;
+
+  // 从数据库加载用户数据
+  const loadUserData = useCallback(async (forceReload = false) => {
+    if (!user) return;
+    
+    try {
+      // 强制重新加载时忽略hasLoadedRef标记，确保总是从数据库获取最新数据
+      if (forceReload || !hasLoadedRef.current) {
+        const freshUser = await usersAPI.getMe();
+        // 合并策略：用后端返回覆盖已存在的值，但不会用 undefined/null 清空已有输入
+        setProfileForm(prev => {
+          const next: any = {
+            ...prev,
+            ...freshUser,
+            name: (freshUser as any).full_name || freshUser.name || prev.name,
+          };
+          // 关键字段保留已有值作为后备
+          [
+            'email',
+            'employee_id',
+            'phone',
+            'office_location',
+            'highest_education',
+            'degree',
+            'advisor_qualification',
+            'alma_mater',
+            'major',
+            'research_direction',
+            'dept_id',
+            'profile_public',
+          ].forEach((k) => {
+            const v = (freshUser as any)[k];
+            if (v === undefined || v === null) {
+              (next as any)[k] = (prev as any)[k];
+            }
+          });
+          // 写入本地缓存
+          try {
+            if (profileCacheKey) localStorage.setItem(profileCacheKey, JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+        
+        // 加载经历数据
+        const list = await usersAPI.getMyExperiences();
+        setExperiences(list);
+        
+        // 只有在首次加载时才设置hasLoadedRef，强制重新加载时不重置标记
+        if (!hasLoadedRef.current) {
+          hasLoadedRef.current = true;
+        }
+        
+        if (forceReload) {
+          toast.success('数据已从数据库重新加载');
+        }
+      }
+    } catch (error) {
+      console.error('加载用户数据失败:', error);
+      toast.error('加载数据失败，请重试');
+    }
+  }, [user, profileCacheKey]);
+
   useEffect(() => {
     if (user) {
-      setProfileForm({ ...user });
-      fetchExperiences();
+      // 先尝试从本地缓存预填
+      try {
+        if (profileCacheKey) {
+          const cached = localStorage.getItem(profileCacheKey);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed && typeof parsed === 'object') {
+              setProfileForm(prev => ({ ...parsed, name: (parsed as any).name ?? prev.name }));
+            }
+          }
+        }
+      } catch {}
+      // 再从后端获取最新数据
+      loadUserData();
     }
-  }, [user]);
+  }, [user]); // 移除 loadUserData 依赖，避免循环
 
-  const fetchExperiences = async () => {
+useEffect(() => {
+  if (!user) return;
+  (async () => {
     try {
-      const list = await usersAPI.getMyExperiences();
-      setExperiences(list);
-    } catch {}
-  };
+      const list = await departmentAPI.list();
+      console.log('Debug - Department API response:', list);
+      const mapped = (list || []).map((d: any) => ({ id: d.id, code: d.code, name: d.name }));
+      setDepartments(mapped);
+      console.log('Debug - Mapped departments:', mapped);
+    } catch (error) {
+      console.error('Debug - Failed to load departments:', error);
+    }
+  })();
+}, [user]);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const list = await departmentAPI.list();
-        const mapped = (list || []).map((d: any) => ({ code: d.code, name: d.name }));
-        setDepartments(mapped);
-      } catch {}
-    })();
-  }, []);
+    if (departments.length > 0 && profileForm.dept_id) {
+      const item = departments.find(d => d.id === profileForm.dept_id);
+      if (item) {
+        // 确保院系信息与选择的ID一致
+        setProfileForm(prev => ({ ...prev, dept_id: item.id }));
+      }
+    }
+  }, [departments, profileForm.dept_id]);
 
+  useEffect(() => {
+    const did = (user as any)?.dept_id;
+    if (did == null) {
+      setDeptName('未分配院系');
+      lastDeptIdRef.current = null;
+      return;
+    }
+    if (lastDeptIdRef.current === Number(did)) return;
+    const byId = (departments as any[]).find(d => Number(d.id) === Number(did));
+    if (byId && byId.name) {
+      setDeptName(byId.name);
+      lastDeptIdRef.current = Number(did);
+    } else if ((user as any)?.department) {
+      setDeptName((user as any).department);
+      lastDeptIdRef.current = Number(did);
+    }
+  }, [user?.dept_id, departments]);
+
+  // 实时保存到数据库
   const handleUpdateProfile = async () => {
     if (!user) return;
-    setLoading(true);
+    setSaving(true);
     try {
-      const deptCode = profileForm.department_code
-        ? profileForm.department_code
-        : (profileForm.department ? await departmentAPI.normalize(profileForm.department) : null);
-      const updated = await usersAPI.updateMe({
-        ...profileForm,
-        department_code: deptCode || undefined
-      });
-      if (updated) {
-        setProfileForm(prev => ({
-          ...prev,
-          ...updated,
-          name: (updated as any).full_name || (updated as any).name || prev.name
-        }));
+      // 准备更新数据
+      const updateData = { ...profileForm };
+      
+      // 处理部门ID
+      if (!updateData.dept_id && updateData.department) {
+        const dept = await departmentAPI.normalize(updateData.department);
+        if (dept && dept.id) {
+          updateData.dept_id = dept.id;
+        }
       }
-      toast.success('个人档案已保存');
+      
+      // 发送更新请求到数据库
+      const updated = await usersAPI.updateMe(updateData);
+      
+      if (updated) {
+        // 将当前表单值写入本地缓存，实现“锁定输入”
+        try {
+          if (profileCacheKey) localStorage.setItem(profileCacheKey, JSON.stringify(profileForm));
+        } catch {}
+        toast.success('个人档案已保存（已锁定本地显示）');
+      }
+      
+      // 通知父组件更新
       if (onProfileUpdate) onProfileUpdate();
     } catch (e: any) {
-      toast.error(e.message || '更新失败');
+      console.error('保存失败:', e);
+      toast.error(e.message || '保存失败，请检查网络连接');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
+
+  // 禁用自动保存功能，完全依赖手动保存
+  // 避免频繁的API请求和状态更新循环
+  // 用户可以通过右上角的保存按钮手动保存更改
 
   const handleAddExperience = async () => {
     if (!expForm.title || !expForm.institution) {
@@ -207,7 +328,7 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
           >
             <option value="">请选择学院</option>
             {options.map((opt: any) => (
-              <option key={opt.code} value={opt.code}>{opt.name}</option>
+              <option key={opt.id} value={opt.id}>{opt.name}</option>
             ))}
           </select>
           <ChevronRight className="absolute right-3 w-4 h-4 text-slate-400 pointer-events-none rotate-90" />
@@ -267,7 +388,12 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
                   </span>
                 </h1>
                 <div className="flex items-center text-slate-600 mt-2 font-medium">
-                  <Briefcase className="w-4 h-4 mr-1.5" /> {(user as any).department || '未分配院系'}
+                  <Briefcase className="w-4 h-4 mr-1.5" /> {(() => {
+                    const id = (profileForm as any).dept_id;
+                    if (!id) return '未分配院系';
+                    const item = (departments as any[]).find(d => Number(d.id) === Number(id));
+                    return item?.name || '未分配院系';
+                  })()}
                   <span className="mx-2 text-slate-300">|</span>
                   <Mail className="w-4 h-4 mr-1.5" /> {user.email}
                 </div>
@@ -438,25 +564,36 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
               <div className="w-full h-px bg-slate-100"></div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <ModernInput label="真实姓名" value={profileForm.name} onChange={(v: string) => setProfileForm({...profileForm, name: v})} icon={UserIcon} />
-                <ModernInput label="工号/职工号" value={(profileForm as any).employee_id} onChange={(v: string) => setProfileForm({...profileForm, employee_id: v})} icon={CreditCardIcon} placeholder="例如：213" />
-                <ModernInput label="电子邮箱" value={profileForm.email} onChange={(v: string) => setProfileForm({...profileForm, email: v})} icon={Mail} />
-                <ModernInput label="联系电话" value={(profileForm as any).phone} onChange={(v: string) => setProfileForm({...profileForm, phone: v})} icon={Phone} />
-                <ModernInput className="md:col-span-2" label="办公地点" value={(profileForm as any).office_location} onChange={(v: string) => setProfileForm({...profileForm, office_location: v})} icon={MapPin} />
+                <ModernInput label="真实姓名" value={profileForm.name} onChange={(v: string) => setProfileForm(prev => ({...prev, name: v}))} icon={UserIcon} />
+                <ModernInput label="工号/职工号" value={(profileForm as any).employee_id} onChange={(v: string) => setProfileForm(prev => ({...prev, employee_id: v}))} icon={CreditCardIcon} placeholder="例如：213" />
+                <ModernInput label="电子邮箱" value={profileForm.email} onChange={(v: string) => setProfileForm(prev => ({...prev, email: v}))} icon={Mail} />
+                <ModernInput label="联系电话" value={(profileForm as any).phone} onChange={(v: string) => setProfileForm(prev => ({...prev, phone: v}))} icon={Phone} />
+                <ModernInput className="md:col-span-2" label="办公地点" value={(profileForm as any).office_location} onChange={(v: string) => setProfileForm(prev => ({...prev, office_location: v}))} icon={MapPin} />
                 <ModernSelect
                   className="md:col-span-2"
                   label="所属院系/部门"
-                  value={profileForm.department_code}
-                  onChange={(code: string) => {
-                    const item = departments.find(d => d.code === code);
-                    setProfileForm({
-                      ...profileForm,
-                      department: item ? item.name : '',
-                      department_code: code || undefined,
-                    });
+                  value={profileForm.dept_id}
+                  onChange={async (id: string) => {
+                    const item = departments.find(d => d.id === Number(id));
+                    const nextId = id ? Number(id) : undefined;
+                    setProfileForm(prev => ({ ...prev, dept_id: nextId }));
+                    try {
+                      const payload = { dept_id: id ? Number(id) : null } as any;
+                      await usersAPI.updateMe(payload);
+                      try {
+                        if (profileCacheKey) {
+                          const cached = localStorage.getItem(profileCacheKey);
+                          const base = cached ? JSON.parse(cached) : {};
+                          localStorage.setItem(profileCacheKey, JSON.stringify({ ...base, dept_id: nextId }));
+                        }
+                      } catch {}
+                      toast.success('院系已更新');
+                    } catch (e: any) {
+                      toast.error(e.message || '院系更新失败');
+                    }
                   }}
                   icon={Briefcase}
-                  options={departments}
+                  options={departments.map(d => ({ ...d, code: d.id.toString(), name: d.name }))}
                 />
               </div>
             </div>
@@ -472,19 +609,19 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
               <div className="w-full h-px bg-slate-100"></div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <ModernInput label="最高学历" value={(profileForm as any).highest_education} onChange={(v: string) => setProfileForm({...profileForm, highest_education: v})} />
-                <ModernInput label="学位" value={(profileForm as any).degree} onChange={(v: string) => setProfileForm({...profileForm, degree: v})} />
-                <ModernInput label="导师资格" value={(profileForm as any).advisor_qualification} onChange={(v: string) => setProfileForm({...profileForm, advisor_qualification: v})} placeholder="如：博导/硕导" />
+                <ModernInput label="最高学历" value={(profileForm as any).highest_education} onChange={(v: string) => setProfileForm(prev => ({...prev, highest_education: v}))} />
+                <ModernInput label="学位" value={(profileForm as any).degree} onChange={(v: string) => setProfileForm(prev => ({...prev, degree: v}))} />
+                <ModernInput label="导师资格" value={(profileForm as any).advisor_qualification} onChange={(v: string) => setProfileForm(prev => ({...prev, advisor_qualification: v}))} placeholder="如：博导/硕导" />
                 
-                <ModernInput className="md:col-span-2" label="毕业院校" value={(profileForm as any).alma_mater} onChange={(v: string) => setProfileForm({...profileForm, alma_mater: v})} icon={GraduationCap} />
-                <ModernInput label="所学专业" value={(profileForm as any).major} onChange={(v: string) => setProfileForm({...profileForm, major: v})} />
+                <ModernInput className="md:col-span-2" label="毕业院校" value={(profileForm as any).alma_mater} onChange={(v: string) => setProfileForm(prev => ({...prev, alma_mater: v}))} icon={GraduationCap} />
+                <ModernInput label="所学专业" value={(profileForm as any).major} onChange={(v: string) => setProfileForm(prev => ({...prev, major: v}))} />
                 
                 <div className="md:col-span-3">
                   <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 ml-1">研究方向简介</label>
                   <textarea 
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 px-4 py-3 text-sm transition outline-none resize-none min-h-[120px] font-medium text-slate-700"
                     value={(profileForm as any).research_direction || ''}
-                    onChange={e => setProfileForm({...profileForm, research_direction: e.target.value})}
+                    onChange={e => setProfileForm(prev => ({...prev, research_direction: e.target.value}))}
                     placeholder="请简要描述您的主要研究领域，建议使用逗号分隔关键词..."
                   />
                 </div>
@@ -600,7 +737,7 @@ export const AcademicProfile: React.FC<Props> = ({ user, researchItems, onProfil
                 </div>
                 <button
                   onClick={() => {
-                    setProfileForm({ ...profileForm, profile_public: !profileForm.profile_public });
+                    setProfileForm(prev => ({ ...prev, profile_public: !prev.profile_public }));
                     toast.info('请点击右上角保存以生效', { autoClose: 1500 });
                   }}
                   className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none border-2 border-transparent ${ (profileForm as any).profile_public ? 'bg-indigo-600' : 'bg-slate-300'}`}

@@ -14,7 +14,7 @@ if BASE_DIR not in sys.path:
 from app.db.session import AsyncSessionLocal
 from app.models.user import User
 from app.models.research_item import ResearchItem, ApprovalStatus
-from app.models.research_type import ResearchSubtype, ResearchType
+from app.models.research_type import ResearchSubtype
 from app.models.research_collaborator import ResearchCollaborator
 
 VERTICAL = ("纵向项目", [
@@ -28,30 +28,18 @@ HORIZONTAL = ("横向项目", [
 ])
 
 async def ensure_subtypes(session: AsyncSession):
-    # Ensure a basic research type and subtypes exist
-    # Create generic type "项目" with two subtypes for vertical/horizontal, and "学术论文"/"专利" as examples
-    # Try to find existing by name
-    type_res = await session.execute(select(ResearchType).filter(ResearchType.name == "项目"))
-    proj_type = type_res.scalars().first()
-    if not proj_type:
-        proj_type = ResearchType(name="项目")
-        session.add(proj_type)
-        await session.flush()
-    # Vertical subtype
-    v_res = await session.execute(select(ResearchSubtype).filter(ResearchSubtype.name == "纵向科研项目"))
-    v_sub = v_res.scalars().first()
-    if not v_sub:
-        v_sub = ResearchSubtype(name="纵向科研项目", type_id=proj_type.id)
-        session.add(v_sub)
-        await session.flush()
-    # Horizontal subtype
-    h_res = await session.execute(select(ResearchSubtype).filter(ResearchSubtype.name == "横向科研项目"))
-    h_sub = h_res.scalars().first()
-    if not h_sub:
-        h_sub = ResearchSubtype(name="横向科研项目", type_id=proj_type.id)
-        session.add(h_sub)
-        await session.flush()
-    return v_sub.id, h_sub.id
+    # Ensure six subtypes exist (no parent type)
+    names = ["纵向科研项目","横向科研项目","科研论文","专著/著作","专利成果","科研获奖"]
+    ids: dict[str, int] = {}
+    for nm in names:
+        res = await session.execute(select(ResearchSubtype).filter(ResearchSubtype.name == nm))
+        sub = res.scalars().first()
+        if not sub:
+            sub = ResearchSubtype(name=nm)
+            session.add(sub)
+            await session.flush()
+        ids[nm] = sub.id
+    return ids["纵向科研项目"], ids["横向科研项目"]
 
 def random_date(start_days_ago=400, end_days_ago=0):
     base = datetime.utcnow() - timedelta(days=random.randint(end_days_ago, start_days_ago))

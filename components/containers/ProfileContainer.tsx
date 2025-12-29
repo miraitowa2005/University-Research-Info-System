@@ -49,6 +49,7 @@ export default function ProfileContainer({
       <AcademicProfile user={user} researchItems={filteredItems} impactItems={impactItems} />
       <TeacherNotifications
         notices={notices}
+        titlesOnly
         onMarkRead={async (id) => {
           try {
             await noticeAPI.markRead(id);
@@ -60,9 +61,20 @@ export default function ProfileContainer({
             toast.error((e as any)?.message || '操作失败');
           }
         }}
+        onDelete={async (id) => {
+          try {
+            await noticeAPI.deleteMine(id);
+            const ns = await noticeAPI.my();
+            onNoticesRefresh(ns);
+            const c = await noticeAPI.unreadCount();
+            onUnreadChange(c);
+            toast.success('已删除通知');
+          } catch (e: any) {
+            toast.error((e as any)?.message || '删除失败');
+          }
+        }}
         unreadCount={unreadCount}
       />
     </div>
   );
 }
-

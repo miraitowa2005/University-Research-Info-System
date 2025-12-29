@@ -3,7 +3,8 @@ import { ResearchItem, User } from '../types';
 import { 
   Calendar as CalendarIcon, Download, FileText, 
   ChevronLeft, ChevronRight, AlertCircle, Clock, Plus, Flag, FileArchive,
-  CheckCircle2, FileSpreadsheet, ShieldCheck, History, MoreHorizontal
+  CheckCircle2, FileSpreadsheet, ShieldCheck, History, MoreHorizontal,
+  BookOpen, Award, Briefcase // 假设您有这些图标，如果没有可统一使用 FileText
 } from 'lucide-react';
 import { INITIAL_EVENTS } from '../logic/compiler';
 
@@ -179,63 +180,236 @@ export const ResearchCalendar = () => {
 
 /**
  * 2. Data Export Center (Redesigned)
- * A modern, dashboard-like interface for data export.
+ * 升级版数据导出中心，支持细分领域的科研数据导出
  */
 export const DataExportCenter = ({ user, researchItems }: { user: User, researchItems: ResearchItem[] }) => {
-  const [selectedTypes, setSelectedTypes] = useState<string[]>(['projects', 'papers']);
-  const [exportFormat, setExportFormat] = useState<'csv' | 'json' | 'pdf'>('csv');
+  // 默认全选前三个
+  const [selectedTypes, setSelectedTypes] = useState<string[]>(['vertical_projects', 'horizontal_projects', 'papers']);
+  const [exportFormat, setExportFormat] = useState<'csv' | 'json' | 'cv' | 'pdf'>('pdf');
   const [isExporting, setIsExporting] = useState(false);
+  const [estimatedSize, setEstimatedSize] = useState<number>(0);
 
   const handleToggle = (type: string) => {
     setSelectedTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
   };
 
-  const handleExport = () => {
-    setIsExporting(true);
-    setTimeout(() => {
-      setIsExporting(false);
-      alert(`打包完成！格式：${exportFormat.toUpperCase()}，包含 ${selectedTypes.length} 类数据。`);
-    }, 1800);
+  const formatSize = (bytes: number) => {
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    let val = bytes;
+    while (val >= 1024 && i < units.length - 1) {
+      val /= 1024;
+      i++;
+    }
+    return `${val.toFixed( i === 0 ? 0 : 2)} ${units[i]}`;
   };
 
+  const buildPdfHtml = () => {
+    const titleColor = '#1D4ED8';
+    const headingColor = '#111827';
+    const textColor = '#374151';
+    const subColor = '#6B7280';
+    const borderColor = '#D1D5DB';
+    const cats: {id: string; name: string; match: (c: string)=>boolean}[] = [
+      { id: 'vertical_projects', name: '纵向项目', match: c => c.includes('纵向') },
+      { id: 'horizontal_projects', name: '横向项目', match: c => c.includes('横向') },
+      { id: 'papers', name: '学术论文', match: c => c.includes('论文') },
+      { id: 'patents', name: '专利成果', match: c => c.includes('专利') },
+      { id: 'books', name: '出版著作', match: c => c.includes('出版') || c.includes('著作') },
+      { id: 'awards', name: '科研获奖', match: c => c.includes('奖励') || c.includes('获奖') },
+    ];
+    const itemsByCat = cats
+      .filter(c => selectedTypes.includes(c.id))
+      .map(c => ({
+        title: c.name,
+        list: researchItems.filter(i => c.match(i.category || '')),
+      }));
+    const contactLine = `${(user.email || '')} | ${(user as any).phone || ''}`;
+    const deptOffice = `${(user.department || '')}${(user as any).office_location ? ' · ' + (user as any).office_location : ''}`;
+    const eduLine = `学历：${(user as any).highest_education || ''} · 学位：${(user as any).degree || ''} · 毕业院校：${(user as any).alma_mater || ''}`;
+    const metaLine1 = `专业：${(user as any).major || ''}`;
+    const metaLine2 = `研究方向：${(user as any).research_direction || ''}`;
+    const metaLine3 = `导师资格：${(user as any).advisor_qualification || ''}`;
+    const birth = (user as any).birth_date || '';
+    const birthLine = birth ? `出生日期：${birth}` : '';
+
+    const css = `
+      @page { size: A4; margin: 18mm; }
+      html, body { height: auto; }
+      body { 
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif; 
+        color: ${textColor}; 
+        -webkit-print-color-adjust: exact; 
+        print-color-adjust: exact;
+      }
+      .banner { height: 12mm; background: linear-gradient(90deg, #1D4ED8, #2563EB); border-radius: 6px; margin-bottom: 8mm; }
+      .bg-shape { position: absolute; top: -10mm; right: -15mm; width: 60mm; height: 60mm; background: radial-gradient(circle at 30% 30%, rgba(29,78,216,.12), transparent 60%); }
+      .title { text-align: center; font-weight: 800; font-size: 28px; color: ${titleColor}; margin-top: 8px; margin-bottom: 8px; }
+      .subtitle { text-align: center; font-size: 13px; color: ${subColor}; margin: 2px 0; }
+      .heading { font-weight: 700; font-size: 18px; color: ${headingColor}; margin-top: 12px; padding-bottom: 6px; border-bottom: 2px solid ${borderColor}; }
+      .heading::before { content: ''; display: inline-block; width: 6px; height: 18px; background: #2563EB; border-radius: 3px; margin-right: 8px; vertical-align: -3px; }
+      .subheading { font-weight: 700; font-size: 16px; color: ${headingColor}; margin-top: 10px; }
+      .text { font-size: 12.5px; line-height: 1.6; margin: 3px 0; }
+      .list { margin: 4px 0 8px 0; }
+      .item { font-size: 12.5px; margin: 2px 0; padding-left: 8px; position: relative; break-inside: avoid; }
+      .item::before { content: '•'; position: absolute; left: 0; color: ${titleColor}; }
+      .columns { 
+        column-count: 2; 
+        column-gap: 12mm; 
+        column-fill: auto; 
+      }
+      .card { background: #F8FAFC; border: 1px solid #E5E7EB; border-radius: 6px; padding: 10px 12px; margin-top: 8px; }
+      .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; margin-left: 8px; }
+      .chip.blue { background: #EFF6FF; color: #1D4ED8; border: 1px solid #DBEAFE; }
+      .chip.gray { background: #F3F4F6; color: #374151; border: 1px solid #E5E7EB; }
+      .section { break-inside: avoid; margin-bottom: 10px; }
+      @media print {
+        .no-print { display: none !important; }
+      }
+    `;
+    const head = `
+      <div class="banner"></div>
+      <div class="bg-shape"></div>
+      <div class="title">${user.name || (user as any).full_name || ''}</div>
+      <div class="subtitle">${contactLine}</div>
+      <div class="subtitle">${deptOffice}</div>
+    `;
+    const personal = `
+      <div class="heading">个人信息</div>
+      <div class="card">
+        <div class="text">${eduLine}</div>
+        <div class="text">${metaLine1}</div>
+        <div class="text">${metaLine2}</div>
+        <div class="text">${metaLine3}</div>
+        ${birthLine ? `<div class="text">${birthLine}</div>` : '' }
+      </div>
+    `;
+    const sectionsHtml = itemsByCat.map(sec => {
+      const countChip = `<span class="chip blue">${sec.list.length} 项</span>`;
+      const listHtml = sec.list.slice(0, 30).map(i => {
+        const cj = (i as any).content_json || {};
+        const src = cj.source || cj.agency || '';
+        const num = cj.project_no || cj.projectNo || cj.number || '';
+        const meta = [src, num].filter(Boolean).join('；');
+        const line = meta ? `${i.title}（${meta}）` : i.title;
+        return `<div class="item">${line}</div>`;
+      }).join('');
+      return `
+        <div class="section">
+          <div class="subheading">${sec.title}${countChip}</div>
+          <div class="list">${listHtml}</div>
+        </div>
+      `;
+    }).join('');
+    const body = `
+      <div class="heading">科研成果概览<span class="chip gray">按所选模块</span></div>
+      <div class="columns">
+        ${sectionsHtml}
+      </div>
+    `;
+    return `
+      <!doctype html><html><head><meta charset="utf-8"><title>导出CV</title><style>${css}</style></head>
+      <body>${head}${personal}${body}</body></html>
+    `;
+  };
+
+  const handleExport = async () => {
+    try {
+      setIsExporting(true);
+      if (exportFormat === 'pdf') {
+        const html = buildPdfHtml();
+        const w = window.open('', '_blank');
+        if (!w) throw new Error('无法打开窗口');
+        w.document.write(html);
+        w.document.close();
+        setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 300);
+        setEstimatedSize(0);
+      } else {
+        const api = (await import('../logic/api')).researchAPI;
+        const isCV = exportFormat === 'cv';
+        const res = isCV ? await api.exportCV(selectedTypes) : await api.export(selectedTypes, exportFormat as any);
+        const { blob, filename, size } = res;
+        setEstimatedSize(size);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (e: any) {
+      alert(e?.message || '导出失败');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // 配置 7 个具体的导出选项
   const exportOptions = [
     { 
-      id: 'projects', 
-      label: '科研项目', 
-      desc: '立项、在研及结题项目',
+      id: 'vertical_projects', 
+      label: '纵向科研项目', 
+      desc: '国自然/省基金等',
       icon: FileText, 
-      color: 'text-blue-500 bg-blue-50',
-      count: researchItems.filter(i => i.category.includes('项目')).length 
+      color: 'text-blue-600 bg-blue-50',
+      count: researchItems.filter(i => i.category.includes('纵向')).length 
+    },
+    { 
+      id: 'horizontal_projects', 
+      label: '横向科研项目', 
+      desc: '企业委托/技术合同',
+      icon: FileText, // 或 Briefcase
+      color: 'text-cyan-600 bg-cyan-50',
+      count: researchItems.filter(i => i.category.includes('横向')).length 
     },
     { 
       id: 'papers', 
-      label: '学术论文', 
-      desc: '期刊、会议及收录情况',
+      label: '科研论文', 
+      desc: '期刊/会议/收录',
       icon: FileText, 
-      color: 'text-purple-500 bg-purple-50',
+      color: 'text-purple-600 bg-purple-50',
       count: researchItems.filter(i => i.category.includes('论文')).length 
     },
     { 
+      id: 'books', 
+      label: '专著/著作', 
+      desc: '出版教材与专著',
+      icon: FileText, // 或 BookOpen
+      color: 'text-pink-600 bg-pink-50',
+      count: researchItems.filter(i => i.category.includes('著作') || i.category.includes('出版')).length 
+    },
+    { 
       id: 'patents', 
-      label: '专利软著', 
-      desc: '授权专利与知识产权',
+      label: '专利成果', 
+      desc: '发明专利与软著',
       icon: FileText, 
-      color: 'text-emerald-500 bg-emerald-50',
+      color: 'text-emerald-600 bg-emerald-50',
       count: researchItems.filter(i => i.category.includes('专利')).length 
+    },
+    { 
+      id: 'awards', 
+      label: '科研获奖', 
+      desc: '科技进步奖等',
+      icon: Flag, // 或 Award
+      color: 'text-orange-600 bg-orange-50',
+      count: researchItems.filter(i => i.category.includes('获奖') || i.category.includes('奖励')).length 
     },
     { 
       id: 'attachments', 
       label: '附件材料', 
-      desc: '证明文件与申报书归档',
+      desc: '证明文件归档',
       icon: FileArchive, 
-      color: 'text-amber-500 bg-amber-50',
+      color: 'text-slate-600 bg-slate-50',
       count: '1.2GB' 
     },
   ];
 
   const recentExports = [
-    { id: 1, date: '2024-03-10 14:20', type: '项目 + 论文 (CSV)', size: '2.4 MB' },
-    { id: 2, date: '2023-12-01 09:30', type: '全量备份 (ZIP)', size: '1.5 GB' },
+    { id: 1, date: '2024-03-10 14:20', type: '纵向项目 + 论文 (CSV)', size: '2.4 MB' },
+    { id: 2, date: '2023-12-01 09:30', type: '全量科研数据 (ZIP)', size: '1.8 GB' },
   ];
 
   return (
@@ -266,6 +440,7 @@ export const DataExportCenter = ({ user, researchItems }: { user: User, research
                <span className="w-1.5 h-6 bg-indigo-600 rounded-full mr-3"></span>
                选择导出内容
              </h3>
+             {/* 使用 grid 布局，根据屏幕大小自动调整列数 */}
              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                {exportOptions.map(option => {
                  const isSelected = selectedTypes.includes(option.id);
@@ -303,20 +478,21 @@ export const DataExportCenter = ({ user, researchItems }: { user: User, research
                <span className="w-1.5 h-6 bg-indigo-600 rounded-full mr-3"></span>
                选择文件格式
              </h3>
-             <div className="flex gap-4">
-               {[
-                 { id: 'csv', label: 'CSV 表格', desc: '适用于 Excel 分析' },
-                 { id: 'json', label: 'JSON 数据', desc: '适用于系统迁移' },
-                 { id: 'pdf', label: 'PDF 报表', desc: '适用于打印归档' },
-               ].map(fmt => (
-                 <label key={fmt.id} className={`flex-1 flex flex-col p-4 rounded-xl border-2 cursor-pointer transition-all ${exportFormat === fmt.id ? 'border-indigo-600 bg-indigo-50/50' : 'border-slate-100 hover:bg-slate-50'}`}>
-                   <div className="flex items-center mb-2">
-                     <input type="radio" name="format" className="accent-indigo-600 w-4 h-4 mr-2" checked={exportFormat === fmt.id} onChange={() => setExportFormat(fmt.id as any)} />
-                     <span className="font-bold text-sm text-slate-800">{fmt.label}</span>
-                   </div>
-                   <span className="text-xs text-slate-500 ml-6">{fmt.desc}</span>
-                 </label>
-               ))}
+              <div className="flex gap-4">
+                {[
+                  { id: 'csv', label: 'CSV 表格', desc: '适用于 Excel 分析' },
+                  { id: 'json', label: 'JSON 数据', desc: '适用于系统迁移' },
+                  { id: 'cv', label: 'CV 文档 (DOCX)', desc: '美观版式（可编辑）' },
+                  { id: 'pdf', label: 'PDF 文档', desc: '打印级版式（不可编辑）' },
+                ].map(fmt => (
+                  <label key={fmt.id} className={`flex-1 flex flex-col p-4 rounded-xl border-2 cursor-pointer transition-all ${exportFormat === fmt.id ? 'border-indigo-600 bg-indigo-50/50' : 'border-slate-100 hover:bg-slate-50'}`}>
+                    <div className="flex items-center mb-2">
+                      <input type="radio" name="format" className="accent-indigo-600 w-4 h-4 mr-2" checked={exportFormat === fmt.id} onChange={() => setExportFormat(fmt.id as any)} />
+                      <span className="font-bold text-sm text-slate-800">{fmt.label}</span>
+                    </div>
+                    <span className="text-xs text-slate-500 ml-6">{fmt.desc}</span>
+                  </label>
+                ))}
              </div>
            </div>
          </div>
@@ -334,10 +510,10 @@ export const DataExportCenter = ({ user, researchItems }: { user: User, research
                  <span>目标格式</span>
                  <span className="font-bold text-slate-900 uppercase">{exportFormat}</span>
                </div>
-               <div className="flex justify-between border-t border-slate-100 pt-3">
-                 <span>预估大小</span>
-                 <span className="font-bold text-indigo-600">~ 25 MB</span>
-               </div>
+              <div className="flex justify-between border-t border-slate-100 pt-3">
+                <span>预估大小</span>
+                <span className="font-bold text-indigo-600">{estimatedSize ? `~ ${formatSize(estimatedSize)}` : '~ 0 B'}</span>
+              </div>
              </div>
              
              <button 

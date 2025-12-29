@@ -2,7 +2,7 @@
 try:
     from .user import User
     from .research_item import ResearchItem
-    from .research_type import ResearchType
+    from .research_type import ResearchSubtype
     from .research_collaborator import ResearchCollaborator
     from .audit_log import AuditLog
     from .notice import Notice

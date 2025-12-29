@@ -206,6 +206,11 @@ export const ResearchTable: React.FC<Props> = ({
                               </button>
                             </>
                           )}
+                          {item.authorId === currentUser.id && (
+                            <button onClick={() => onDelete?.(item.id)} className="text-red-600 hover:text-red-900" title="删除">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                         </>
                       )}
 

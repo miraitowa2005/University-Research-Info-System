@@ -1,5 +1,5 @@
 from typing import List, Any
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -19,54 +19,27 @@ crud_notice = CRUDBase[NoticeModel, NoticeCreate, NoticeCreate](NoticeModel)
 async def create_notice(
     *,
     db: AsyncSession = Depends(deps.get_db),
-    notice_in: NoticeCreate,
+    body: dict,
     current_user = Depends(deps.get_current_active_auditor),
 ) -> Any:
-    # Normalize department
-    code = notice_in.target_department_code
-    name = notice_in.target_department
-    async def norm(s: str) -> str:
-        return (s or "").strip().lower().replace(" ", "")
-    if not code and name:
-        # Try match by name
-        res = await db.execute(select(Department))
-        for d in res.scalars().all():
-            if norm(d.name) == norm(name):
-                code = d.code
-                break
-        if not code:
-            res2 = await db.execute(select(DepartmentAlias))
-            for a in res2.scalars().all():
-                if norm(a.alias) == norm(name):
-                    code = a.code
-                    break
+    # Determine target_dept_id from current user
+    res_me = await db.execute(select(User.dept_id).where(User.id == getattr(current_user, "id", None)))
+    me_row = res_me.first()
+    if not me_row or not me_row[0]:
+        raise HTTPException(status_code=400, detail="publisher_dept_unknown")
+    target_dept_id = int(me_row[0])
     payload = NoticeCreate(
-        title=notice_in.title,
-        content=notice_in.content,
-        target_role=notice_in.target_role,
-        target_department=notice_in.target_department,
-        target_department_code=code,
-        publisher=notice_in.publisher
+        title=(body.get("title") or "").strip(),
+        content=(body.get("content") or "").strip(),
+        target_role=(body.get("target_role") or "all").strip(),
+        target_dept_id=target_dept_id,
+        publisher=body.get("publisher") or getattr(current_user, "id", None)
     )
     created = await crud_notice.create(db, obj_in=payload)
-    # Fan-out recipients
-    q = select(User)
-    if payload.target_role != "all":
-        q = q.where(User.role == payload.target_role)
+    # build recipients query
+    q = select(User).where(User.dept_id == target_dept_id).where(User.role == "teacher")
     users = (await db.execute(q)).scalars().all()
-    recs = []
-    for u in users:
-        # If department code is specified, try to match user department_code or normalize
-        if code:
-            # skip if user has department_code and not equal
-            # Note: department_code may be null; allow normalize on the fly
-            # naive normalize by querying alias table is overkill here; accept only exact code
-            # assume admin sets code from dropdown so it's consistent
-            # we include user when u.department_code == code
-            # if user doesn't have code, we skip
-            if getattr(u, "department_code", None) != code:
-                continue
-        recs.append(NoticeRecipient(notice_id=created.id, user_id=u.id))
+    recs = [NoticeRecipient(notice_id=created.id, user_id=u.id) for u in users]
     if recs:
         db.add_all(recs)
         await db.commit()
@@ -76,44 +49,26 @@ async def create_notice(
 async def create_notice_no_slash(
     *,
     db: AsyncSession = Depends(deps.get_db),
-    notice_in: NoticeCreate,
+    body: dict,
     current_user = Depends(deps.get_current_active_auditor),
 ) -> Any:
-    code = notice_in.target_department_code
-    name = notice_in.target_department
-    def norm(s: str) -> str:
-        return (s or "").strip().lower().replace(" ", "")
-    if not code and name:
-        res = await db.execute(select(Department))
-        for d in res.scalars().all():
-            if norm(d.name) == norm(name):
-                code = d.code
-                break
-        if not code:
-            res2 = await db.execute(select(DepartmentAlias))
-            for a in res2.scalars().all():
-                if norm(a.alias) == norm(name):
-                    code = a.code
-                    break
+    # Determine target_dept_id from current user
+    res_me = await db.execute(select(User.dept_id).where(User.id == getattr(current_user, "id", None)))
+    me_row = res_me.first()
+    if not me_row or not me_row[0]:
+        raise HTTPException(status_code=400, detail="publisher_dept_unknown")
+    target_dept_id = int(me_row[0])
     payload = NoticeCreate(
-        title=notice_in.title,
-        content=notice_in.content,
-        target_role=notice_in.target_role,
-        target_department=notice_in.target_department,
-        target_department_code=code,
-        publisher=notice_in.publisher
+        title=(body.get("title") or "").strip(),
+        content=(body.get("content") or "").strip(),
+        target_role=(body.get("target_role") or "all").strip(),
+        target_dept_id=target_dept_id,
+        publisher=body.get("publisher") or getattr(current_user, "id", None)
     )
     created = await crud_notice.create(db, obj_in=payload)
-    # Fan-out recipients
-    q = select(User)
-    if payload.target_role != "all":
-        q = q.where(User.role == payload.target_role)
+    q = select(User).where(User.dept_id == target_dept_id).where(User.role == "teacher")
     users = (await db.execute(q)).scalars().all()
-    recs = []
-    for u in users:
-        if code and getattr(u, "department_code", None) != code:
-            continue
-        recs.append(NoticeRecipient(notice_id=created.id, user_id=u.id))
+    recs = [NoticeRecipient(notice_id=created.id, user_id=u.id) for u in users]
     if recs:
         db.add_all(recs)
         await db.commit()
@@ -152,3 +107,26 @@ async def mark_notice_read(
         await db.commit()
         return {"status": "ok"}
     return {"status": "ignored"}
+
+@router.get("/unread-count")
+async def unread_count(
+    db: AsyncSession = Depends(deps.get_db),
+    current_user = Depends(deps.get_current_active_user),
+) -> Any:
+    res = await db.execute(select(NoticeRecipient).where(NoticeRecipient.user_id == current_user.id, NoticeRecipient.is_read == False))  # noqa: E712
+    rows = res.scalars().all()
+    return {"count": len(rows)}
+
+@router.delete("/{notice_id}/mine")
+async def delete_my_notice(
+    notice_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user = Depends(deps.get_current_active_user),
+) -> Any:
+    res = await db.execute(select(NoticeRecipient).where(NoticeRecipient.notice_id == notice_id, NoticeRecipient.user_id == current_user.id))
+    rec = res.scalars().first()
+    if not rec:
+        raise HTTPException(status_code=404, detail="recipient_not_found")
+    await db.delete(rec)
+    await db.commit()
+    return {"status": "ok"}

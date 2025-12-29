@@ -13,8 +13,6 @@ class User(Base):
     is_active = Column(Boolean(), default=True)
     is_superuser = Column(Boolean(), default=False)
     role = Column(String(50), default="teacher")
-    department = Column(String(255), nullable=True)
-    department_code = Column(String(50), nullable=True)
     dept_id = Column(Integer, nullable=True, index=True)
     employee_id = Column(String(100), nullable=True)
     gender = Column(String(20), nullable=True)

@@ -33,6 +33,10 @@ async def ensure_mysql_role_column():
     if "mysql" not in url:
         return
     async with engine.begin() as conn:
+        # Ensure connection/session uses utf8mb4
+        await conn.execute(text("SET NAMES utf8mb4"))
+        await conn.execute(text("SET CHARACTER SET utf8mb4"))
+        await conn.execute(text("SET character_set_connection = utf8mb4"))
         # Ensure users table exists
         await conn.execute(text("""
         CREATE TABLE IF NOT EXISTS users (
@@ -73,17 +77,40 @@ async def ensure_mysql_role_column():
             title VARCHAR(255) NOT NULL,
             content VARCHAR(2000) NOT NULL,
             target_role VARCHAR(50) NOT NULL,
-            target_department VARCHAR(255),
-            target_department_code VARCHAR(50),
+            target_dept_id INT NULL,
             publisher VARCHAR(255),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """))
-        # Ensure column target_department_code exists (for pre-existing tables)
+        # Ensure migration to target_dept_id
         res_notices = await conn.execute(text("SHOW COLUMNS FROM notices"))
         ncols = [row[0] for row in res_notices.fetchall()]
-        if "target_department_code" not in ncols:
-            await conn.execute(text("ALTER TABLE notices ADD COLUMN target_department_code VARCHAR(50)"))
+        if "target_dept_id" not in ncols:
+            await conn.execute(text("ALTER TABLE notices ADD COLUMN target_dept_id INT NULL"))
+            # Backfill from department_code if exists
+            if "target_department_code" in ncols:
+                await conn.execute(text("""
+                    UPDATE notices n
+                    JOIN departments d ON d.code = n.target_department_code
+                    SET n.target_dept_id = d.id
+                    WHERE n.target_dept_id IS NULL
+                """))
+            # Add FK
+            try:
+                await conn.execute(text("ALTER TABLE notices ADD CONSTRAINT fk_notices_dept FOREIGN KEY (target_dept_id) REFERENCES departments(id)"))
+            except Exception:
+                pass
+        # Drop legacy columns if exist
+        if "target_department" in ncols:
+            try:
+                await conn.execute(text("ALTER TABLE notices DROP COLUMN target_department"))
+            except Exception:
+                pass
+        if "target_department_code" in ncols:
+            try:
+                await conn.execute(text("ALTER TABLE notices DROP COLUMN target_department_code"))
+            except Exception:
+                pass
         # Ensure departments tables exist and seed
         await conn.execute(text("""
         CREATE TABLE IF NOT EXISTS departments (
@@ -154,16 +181,31 @@ async def ensure_mysql_role_column():
         ('research.stats.view','查看科研统计','Research'),
         ('research.data.export','数据导出','Research')
         """))
-        # Seed research types and subtypes for categories
-        await conn.execute(text("INSERT IGNORE INTO research_types (id, name, description) VALUES (1, '项目', '科研项目'), (2, '成果', '论文专著等成果')"))
+        # Ensure research_subtypes exists and seed six categories
         await conn.execute(text("""
-        INSERT IGNORE INTO research_subtypes (id, name, type_id) VALUES
-        (1,'纵向科研项目',1),
-        (2,'横向科研项目',1),
-        (3,'学术论文',2),
-        (4,'出版著作',2),
-        (5,'发明专利',2),
-        (6,'科技奖励',2)
+        CREATE TABLE IF NOT EXISTS research_subtypes (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(255) NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """))
+        await conn.execute(text("""
+        INSERT IGNORE INTO research_subtypes (id, name) VALUES
+        (1,'纵向科研项目'),
+        (2,'横向科研项目'),
+        (3,'学术论文'),
+        (4,'出版著作'),
+        (5,'专利成果'),
+        (6,'科研获奖')
+        """))
+        # Ensure review_templates table exists
+        await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS review_templates (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            title VARCHAR(255) NOT NULL,
+            content TEXT NOT NULL,
+            is_shared TINYINT(1) DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """))
         # Ensure user_experiences table
         await conn.execute(text("""
@@ -202,13 +244,6 @@ async def ensure_mysql_role_column():
         await ensure_col("advisor_qualification", "advisor_qualification VARCHAR(50) NULL")
         await ensure_col("profile_public", "profile_public TINYINT(1) DEFAULT 0")
         await ensure_col("dept_id", "dept_id BIGINT NULL")
-        # Ensure users have department fields
-        res_users = await conn.execute(text("SHOW COLUMNS FROM users"))
-        ucols = [row[0] for row in res_users.fetchall()]
-        if "department" not in ucols:
-            await conn.execute(text("ALTER TABLE users ADD COLUMN department VARCHAR(255)"))
-        if "department_code" not in ucols:
-            await conn.execute(text("ALTER TABLE users ADD COLUMN department_code VARCHAR(50)"))
         # Seed default admin if no users present
         res_count = await conn.execute(text("SELECT COUNT(*) FROM users"))
         count = res_count.scalar() or 0
@@ -218,6 +253,7 @@ async def ensure_mysql_role_column():
             INSERT INTO users (full_name, email, hashed_password, is_active, is_superuser, role, department, department_code)
             VALUES (:name, :email, :hpw, 1, 1, 'sys_admin', '计算机学院', 'CS')
             """), {"name": "System Admin", "email": "admin@local", "hpw": hpw})
+        # Backfill users.dept_id if needed (no reliance on department_code/department)
         # Ensure notice recipients table exists
         await conn.execute(text("""
         CREATE TABLE IF NOT EXISTS notice_recipients (
