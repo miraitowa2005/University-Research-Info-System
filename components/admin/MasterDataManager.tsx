@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Department } from '../../types';
-import { INITIAL_DEPARTMENTS } from '../../logic/compiler';
+import { departmentAPI } from '../../logic/api';
 import { Users, GraduationCap, Briefcase, Building2, MoreVertical, Search, FileSpreadsheet, Plus } from 'lucide-react';
 
 interface ExtendedDepartment extends Department {
@@ -9,17 +9,33 @@ interface ExtendedDepartment extends Department {
   projectsCount: number;
 }
 
-const MOCK_DEPARTMENTS_EXT: ExtendedDepartment[] = INITIAL_DEPARTMENTS.map(d => ({
-  ...d,
-  type: 'academic',
-  memberCount: d.code === 'CS' ? 120 : d.code === 'PHYS' ? 80 : 65,
-  projectsCount: d.code === 'CS' ? 24 : d.code === 'PHYS' ? 12 : 9,
-}));
-
 export const MasterDataManager = () => {
-  const [departments, setDepartments] = useState<ExtendedDepartment[]>(MOCK_DEPARTMENTS_EXT);
+  const [departments, setDepartments] = useState<ExtendedDepartment[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'academic' | 'administrative'>('all');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const rows = await departmentAPI.list();
+        const mapped: ExtendedDepartment[] = (rows || []).map((d: any) => ({
+          id: d.id,
+          code: d.code,
+          name: d.name,
+          type: 'academic',
+          memberCount: 0,
+          projectsCount: 0,
+        }));
+        if (!cancelled) setDepartments(mapped);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const filteredDepts = useMemo(() => {
     return departments.filter(d => {
@@ -122,4 +138,3 @@ export const MasterDataManager = () => {
     </div>
   );
 };
-

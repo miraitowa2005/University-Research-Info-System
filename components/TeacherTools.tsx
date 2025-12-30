@@ -51,6 +51,16 @@ export const ResearchCalendar = () => {
   };
 
   const selectedEvents = events.filter(e => e.date === `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`);
+  
+  const quickAddTodo = async () => {
+    try {
+      const dateIso = selectedDate.toISOString().split('T')[0];
+      await schedulesAPI.create({ title: '代办事项', date: dateIso, type: 'todo' });
+      fetchEvents();
+    } catch {
+      // keep it simple: no notification
+    }
+  };
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 min-h-[600px] animate-in fade-in duration-500">
@@ -67,7 +77,7 @@ export const ResearchCalendar = () => {
               <button onClick={handleNextMonth} className="p-1 hover:bg-white hover:shadow-sm rounded-md transition text-slate-500"><ChevronRight className="w-5 h-5"/></button>
             </div>
           </div>
-          <button className="flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/20 transition active:scale-95">
+          <button onClick={quickAddTodo} className="flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/20 transition active:scale-95">
             <Plus className="w-4 h-4 mr-2" /> 新建日程
           </button>
         </div>
@@ -147,7 +157,7 @@ export const ResearchCalendar = () => {
                    <CalendarIcon className="w-6 h-6 text-slate-300" />
                 </div>
                 <p className="text-slate-500 text-sm font-medium">今日无安排</p>
-                <button className="text-indigo-600 text-xs font-bold mt-2 hover:underline">添加事项</button>
+                <button onClick={quickAddTodo} className="text-indigo-600 text-xs font-bold mt-2 hover:underline">添加事项</button>
               </div>
             )}
           </div>
@@ -160,14 +170,14 @@ export const ResearchCalendar = () => {
             <div className="flex items-center justify-between p-3 bg-white/10 rounded-xl backdrop-blur-sm hover:bg-white/15 transition cursor-pointer">
               <div>
                 <div className="text-sm font-bold text-slate-100">国自然申报书提交</div>
-                <div className="text-[10px] text-slate-400 mt-1 font-mono">2024-03-20 截止</div>
+                <div className="text-[10px] text-slate-400 mt-1 font-mono">2026-03-20 截止</div>
               </div>
               <div className="w-9 h-9 rounded-full border border-yellow-400/30 bg-yellow-400/10 flex items-center justify-center text-yellow-400 font-bold text-xs">3d</div>
             </div>
             <div className="flex items-center justify-between p-3 bg-transparent border border-slate-700 rounded-xl hover:border-slate-500 transition cursor-pointer">
               <div>
                 <div className="text-sm font-bold text-slate-300">年度进展报告</div>
-                <div className="text-[10px] text-slate-500 mt-1 font-mono">2024-03-29 截止</div>
+                <div className="text-[10px] text-slate-500 mt-1 font-mono">2026-03-29 截止</div>
               </div>
               <div className="text-xs text-slate-500 font-medium">12d</div>
             </div>

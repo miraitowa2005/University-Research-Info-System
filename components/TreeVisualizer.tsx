@@ -66,7 +66,7 @@ export const StatsOverview = ({ data }: { data: ResearchItem[] }) => {
         </div>
         <div className="flex gap-2">
           <span className="px-3 py-1 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-full border border-indigo-100">
-            2024 年度
+            2025 年度
           </span>
           <span className="px-3 py-1 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-full border border-emerald-100">
             全校范围

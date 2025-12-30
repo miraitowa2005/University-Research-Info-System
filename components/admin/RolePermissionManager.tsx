@@ -11,6 +11,10 @@ export const RolePermissionManager = () => {
   const [selectedPerms, setSelectedPerms] = useState<string[]>(INITIAL_ROLES[0].permissions);
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createDesc, setCreateDesc] = useState('');
+  const [createPerms, setCreatePerms] = useState<string[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -28,15 +32,30 @@ export const RolePermissionManager = () => {
     })();
   }, []);
 
-  const handleCreateRole = async () => {
-    const name = prompt('请输入新角色名称（如：财务审核员）');
-    if (!name) return;
+  const handleCreateRole = () => {
+    setCreateName('');
+    setCreateDesc('');
+    setCreatePerms([]);
+    setCreateOpen(true);
+  };
+  const confirmCreateRole = async () => {
+    if (!createName.trim()) {
+      toast.error('请输入角色名称');
+      return;
+    }
     try {
       const api = await import('../../logic/api');
-      await api.rbacAPI.createRole(name);
+      const created = await api.rbacAPI.createRole(createName.trim(), createDesc.trim() || undefined);
+      if (createPerms.length > 0) {
+        await api.rbacAPI.savePermissions(created.id, createPerms);
+      }
       const rs = await api.rbacAPI.listRoles();
       setRoles(rs as any);
-      toast.success('新角色已创建');
+      const cur = (rs as any[]).find(r => r.id === created.id) || (rs as any[])[0];
+      setSelectedRole(cur);
+      setSelectedPerms(cur.permissions || []);
+      setCreateOpen(false);
+      toast.success('角色与权限已创建');
     } catch (e: any) {
       toast.error(e.message || '创建失败');
     }
@@ -215,7 +234,55 @@ export const RolePermissionManager = () => {
           </button>
         </div>
       </div>
+      {createOpen && (
+        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl w-full max-w-3xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+              <h4 className="text-sm font-bold text-slate-700">创建新角色</h4>
+              <button onClick={() => setCreateOpen(false)} className="text-slate-500 hover:text-slate-800">×</button>
+            </div>
+            <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="md:col-span-1">
+                <div className="space-y-3">
+                  <input value={createName} onChange={e => setCreateName(e.target.value)} placeholder="角色名称" className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm" />
+                  <textarea value={createDesc} onChange={e => setCreateDesc(e.target.value)} placeholder="角色说明（可选）" rows={4} className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm" />
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <div className="text-xs font-bold text-slate-500 mb-2">选择权限</div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-h-80 overflow-auto custom-scrollbar">
+                  {Object.entries(groupedPermissions as Record<string, Permission[]>).map(([module, perms]: [string, Permission[]]) => (
+                    <div key={module} className="bg-slate-50 rounded-xl border border-slate-100 p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`p-1 rounded ${module === 'System' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>{module === 'System' ? <Settings className="w-3 h-3" /> : <Database className="w-3 h-3" />}</div>
+                        <div className="text-xs font-bold text-slate-700">{module}</div>
+                      </div>
+                      <div className="space-y-2">
+                        {perms.map(p => {
+                          const checked = createPerms.includes(p.code);
+                          return (
+                            <label key={p.code} className="flex items-center justify-between p-2 rounded-lg hover:bg-white border border-transparent hover:border-slate-200 cursor-pointer">
+                              <div>
+                                <div className="text-xs font-bold text-slate-700">{p.name}</div>
+                                <div className="text-[10px] font-mono text-slate-400">{p.code}</div>
+                              </div>
+                              <input type="checkbox" checked={checked} onChange={e => setCreatePerms(prev => (e.target.checked ? [...prev, p.code] : prev.filter(x => x !== p.code)))} />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-2">
+              <button onClick={() => setCreateOpen(false)} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm">取消</button>
+              <button onClick={confirmCreateRole} className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm">创建</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-
