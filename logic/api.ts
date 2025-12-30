@@ -113,7 +113,8 @@ function normalizeUser(raw: any): any {
   const isSuperuser = Boolean(raw.isSuperuser ?? raw.is_superuser ?? raw.is_super_user ?? raw.isAdmin ?? false);
   let role = raw.role || (isSuperuser ? 'sys_admin' : 'teacher');
   const department = raw.department || raw.dept || raw.deptName || raw.dept_name || raw.department_name;
-  const dept_id = raw.dept_id != null ? Number(raw.dept_id) : undefined;
+  const dept_id_raw = raw.dept_id ?? raw.deptId;
+  const dept_id = dept_id_raw != null ? Number(dept_id_raw) : undefined;
   const department_code = raw.department_code || raw.dept_code || raw.deptCode;
   const tags = raw.tags;
 
@@ -223,7 +224,7 @@ export const authAPI = {
 // Users API
 export const usersAPI = {
   getMe: () => apiRequest<any>('/users/me').then(normalizeUser),
-  getAll: () => apiRequest<any[]>('/users'),
+  getAll: () => apiRequest<any[]>('/users').then(arr => Array.isArray(arr) ? arr.map(normalizeUser) : []),
   getById: (id: string) => apiRequest<any>(`/users/${id}`),
   create: (userData: any) => apiRequest<any>('/users', {
     method: 'POST',

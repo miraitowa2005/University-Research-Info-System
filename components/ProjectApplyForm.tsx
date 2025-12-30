@@ -540,8 +540,8 @@ export default function ProjectApplyForm() {
                     const map: Record<string, (n: string) => boolean> = {
                       '纵向科研项目': (n) => n.includes('纵向'),
                       '横向科研项目': (n) => n.includes('横向'),
-                      '科研论文': (n) => n.includes('论文'),
-                      '专著/著作': (n) => n.includes('著作') || n.includes('出版') || n.includes('书'),
+                      '学术论文': (n) => n.includes('论文'),
+                      '出版著作': (n) => n.includes('著作') || n.includes('出版') || n.includes('书'),
                       '专利成果': (n) => n.includes('专利') || n.includes('发明'),
                       '科研获奖': (n) => n.includes('获奖') || n.includes('奖励'),
                     };

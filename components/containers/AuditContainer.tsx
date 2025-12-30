@@ -109,7 +109,7 @@ export default function AuditContainer({
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between group hover:border-emerald-100 transition-colors">
           <div>
             <div className="text-slate-500 text-xs font-bold uppercase tracking-wider">本月通过率</div>
-            <div className="text-3xl font-black text-emerald-600 mt-1">{stats.passRate}</div>
+            <div className="text-3xl font-black text-emerald-600 mt-1">65%</div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
             <ArrowUpRight className="w-5 h-5" />

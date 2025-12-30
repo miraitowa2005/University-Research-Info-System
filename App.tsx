@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, ResearchItem, ResearchCategory, AuditLog, Role } from './types';
 import { RESEARCH_CATEGORIES, RESEARCH_SUBTYPES } from './logic/compiler'; 
-import { authAPI, researchAPI, usersAPI, logsAPI, noticeAPI, departmentAPI } from './logic/api';
+import { authAPI, researchAPI, usersAPI, logsAPI, noticeAPI, departmentAPI, templatesAPI } from './logic/api';
 import { Sidebar } from './components/LogViewer'; 
 import { ResearchTable, getResearchMaskingStatus } from './components/QuadTable'; 
 import { StatsOverview } from './components/TreeVisualizer'; 
@@ -158,6 +158,8 @@ function App() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectId, setRejectId] = useState<string>('');
   const [rejectRemarks, setRejectRemarks] = useState<string>('');
+  const [rejectTpls, setRejectTpls] = useState<any[]>([]);
+  const [rejectTplLoading, setRejectTplLoading] = useState<boolean>(false);
   const [editUserOpen, setEditUserOpen] = useState(false);
   const [editUserId, setEditUserId] = useState<string>('');
   const [editUserName, setEditUserName] = useState<string>('');
@@ -293,6 +295,22 @@ function App() {
     setRejectRemarks('');
     setRejectOpen(true);
   };
+  useEffect(() => {
+    let cancelled = false;
+    if (!rejectOpen) return;
+    (async () => {
+      try {
+        setRejectTplLoading(true);
+        const t = await templatesAPI.list();
+        if (!cancelled) setRejectTpls(t || []);
+      } catch {
+        if (!cancelled) setRejectTpls([]);
+      } finally {
+        if (!cancelled) setRejectTplLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [rejectOpen]);
 
   const handleDelete = async (id: string) => {
     if (!currentUser) return;
@@ -841,13 +859,34 @@ function App() {
       {/* Reject Modal */}
       {rejectOpen && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-md">
+          <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-2xl">
             <div className="p-4 border-b border-gray-200 flex justify-between items-center">
               <h4 className="text-sm font-semibold text-gray-900">填写驳回原因</h4>
               <button onClick={() => setRejectOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
-            <div className="p-4">
-              <textarea value={rejectRemarks} onChange={(e) => setRejectRemarks(e.target.value)} rows={4} className="w-full rounded-lg bg-white border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm" placeholder="请输入具体原因（必填）"></textarea>
+            <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <textarea value={rejectRemarks} onChange={(e) => setRejectRemarks(e.target.value)} rows={8} className="w-full rounded-lg bg-white border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm" placeholder="请输入具体原因，或从右侧模板选择"></textarea>
+              </div>
+              <div className="md:col-span-1">
+                <div className="text-xs font-bold text-slate-600 mb-2">审核意见模板</div>
+                <div className="space-y-2 max-h-64 overflow-auto">
+                  {rejectTplLoading && <div className="text-xs text-slate-400">加载模板中...</div>}
+                  {!rejectTplLoading && rejectTpls.length === 0 && (
+                    <div className="text-xs text-slate-400">暂无模板</div>
+                  )}
+                  {rejectTpls.map((tpl: any) => (
+                    <button
+                      key={tpl.id}
+                      onClick={() => setRejectRemarks(tpl.content)}
+                      className="w-full text-left p-2 rounded-lg border border-slate-200 hover:bg-indigo-50 hover:border-indigo-200"
+                    >
+                      <div className="text-xs font-bold text-slate-800">{tpl.title}</div>
+                      <div className="text-[10px] text-slate-500 line-clamp-2">{tpl.content}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="p-4 flex justify-end gap-2 border-t border-gray-200">
               <button onClick={() => setRejectOpen(false)} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm">取消</button>
